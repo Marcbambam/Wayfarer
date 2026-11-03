@@ -1,0 +1,122 @@
+{
+  "port": 8080,
+  "token": "bitte-aendern",
+  "pollInterval": 5,
+
+  "integrations": [
+    { "type": "demo", "enabled": true },
+
+    {
+      "type": "homeassistant",
+      "id": "ha",
+      "enabled": false,
+      "url": "http://homeassistant.local:8123",
+      "token": "LANGLEBIGER-ZUGRIFFSTOKEN",
+      "domains": ["light", "switch", "climate", "cover", "lock", "media_player", "sensor"],
+      "exclude": ["sensor.sun_next_dawn"],
+      "rooms": { "light.kueche": "Küche" }
+    },
+
+    {
+      "type": "hue",
+      "id": "hue",
+      "enabled": false,
+      "bridge": "192.168.1.20",
+      "username": "API-KEY-VON-npm-run-hue-pair"
+    },
+
+    {
+      "type": "shelly",
+      "id": "shelly",
+      "enabled": false,
+      "devices": [
+        { "id": "kaffee", "name": "Kaffeemaschine", "room": "Küche", "host": "192.168.1.50", "gen": 2, "kind": "plug" },
+        { "id": "rollo-sz", "name": "Rollladen", "room": "Schlafzimmer", "host": "192.168.1.51", "gen": 1, "kind": "cover" },
+        { "id": "dimmer-flur", "name": "Flurlicht", "room": "Flur", "host": "192.168.1.52", "gen": 1, "kind": "light" }
+      ]
+    },
+
+    {
+      "type": "tasmota",
+      "id": "tasmota",
+      "enabled": false,
+      "devices": [
+        { "id": "strip", "name": "LED-Strip", "room": "Büro", "host": "192.168.1.60", "kind": "light", "color": true },
+        { "id": "drucker", "name": "Drucker", "room": "Büro", "host": "192.168.1.61", "kind": "plug" }
+      ]
+    },
+
+    {
+      "type": "webhook",
+      "id": "eigene",
+      "enabled": false,
+      "devices": [
+        {
+          "id": "garage", "name": "Garagentor", "room": "Garage", "type": "cover",
+          "actions": {
+            "open": "http://192.168.1.70/tor/auf",
+            "close": "http://192.168.1.70/tor/zu"
+          }
+        }
+      ]
+    }
+  ],
+
+  "devices": {
+    "demo:wz-tv": { "name": "Sonos" },
+    "demo:flur-temp": { "room": "Flur" }
+  },
+
+  "scenes": [
+    {
+      "id": "guten-morgen",
+      "name": "Guten Morgen",
+      "icon": "☀️",
+      "actions": [
+        { "device": "demo:sz-rollo", "action": "open" },
+        { "device": "demo:kueche-licht", "action": "set_brightness", "value": 80 },
+        { "device": "demo:kueche-kaffee", "action": "turn_on" },
+        { "device": "demo:wz-heizung", "action": "set_target_temp", "value": 21.5 }
+      ]
+    },
+    {
+      "id": "filmabend",
+      "name": "Filmabend",
+      "icon": "🎬",
+      "actions": [
+        { "room": "Wohnzimmer", "type": "light", "action": "set_brightness", "value": 15 },
+        { "device": "demo:wz-decke", "action": "set_color", "value": "#6c5ce7" },
+        { "device": "demo:wz-tv", "action": "play" }
+      ]
+    },
+    {
+      "id": "ich-gehe",
+      "name": "Ich gehe",
+      "icon": "🚪",
+      "actions": [
+        { "type": "light", "action": "turn_off" },
+        { "type": "plug", "action": "turn_off" },
+        { "type": "media", "action": "turn_off" },
+        { "device": "demo:wz-heizung", "action": "set_target_temp", "value": 17 },
+        { "device": "demo:flur-tuer", "action": "lock" }
+      ]
+    },
+    {
+      "id": "gute-nacht",
+      "name": "Gute Nacht",
+      "icon": "🌙",
+      "actions": [
+        { "type": "light", "action": "turn_off" },
+        { "device": "demo:sz-rollo", "action": "close" },
+        { "device": "demo:flur-tuer", "action": "lock" },
+        { "device": "demo:wz-heizung", "action": "set_target_temp", "value": 18 }
+      ]
+    }
+  ],
+
+  "automations": [
+    { "name": "Wecken an Werktagen", "at": "06:45", "days": [1, 2, 3, 4, 5], "scene": "guten-morgen" },
+    { "name": "Nachtruhe", "at": "23:30", "scene": "gute-nacht" },
+    { "name": "Kaffeemaschine aus", "at": "10:00", "actions": [{ "device": "demo:kueche-kaffee", "action": "turn_off" }] }
+  ]
+}

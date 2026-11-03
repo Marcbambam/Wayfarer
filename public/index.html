@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Smart Home</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="title">
+      <h1>Zuhause</h1>
+      <p id="summary" class="muted">Verbinde …</p>
+    </div>
+    <div class="top-actions">
+      <span id="conn" class="dot" title="Verbindung"></span>
+      <button id="btn-all-off" class="ghost" title="Alle Lichter aus">Alle Lichter aus</button>
+      <button id="btn-settings" class="ghost icon" title="Integrationen" aria-label="Integrationen">⚙︎</button>
+    </div>
+  </header>
+
+  <nav id="rooms" class="chips" aria-label="Räume"></nav>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Szenen</h2>
+      <button id="btn-new-scene" class="ghost small">+ Szene aus aktuellem Zustand</button>
+    </div>
+    <div id="scenes" class="scenes"></div>
+  </section>
+
+  <main id="devices"></main>
+
+  <dialog id="dlg-settings">
+    <form method="dialog">
+      <h2>Integrationen</h2>
+      <div id="integrations"></div>
+      <h3>Zeitpläne</h3>
+      <div id="automations" class="muted"></div>
+      <p class="muted small">Integrationen, Räume, Szenen und Zeitpläne werden in <code>config.json</code> eingerichtet.</p>
+      <div class="row end"><button>Schließen</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-scene">
+    <form id="form-scene" method="dialog">
+      <h2>Neue Szene</h2>
+      <label>Name <input name="name" required placeholder="z. B. Filmabend"></label>
+      <p class="muted small">Der aktuelle Zustand der ausgewählten Geräte wird gespeichert.</p>
+      <div id="scene-devices" class="pick"></div>
+      <div class="row end">
+        <button value="cancel" formnovalidate class="ghost">Abbrechen</button>
+        <button value="save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-token">
+    <form id="form-token" method="dialog">
+      <h2>Zugangscode</h2>
+      <label>Token <input name="token" type="password" required autocomplete="current-password"></label>
+      <div class="row end"><button>Anmelden</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

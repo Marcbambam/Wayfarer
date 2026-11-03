@@ -1,0 +1,15 @@
+{
+  "name": "wayfarer-smart-home",
+  "version": "1.0.0",
+  "description": "Selbst gehostete Smart-Home-Zentrale: steuert Home Assistant, Philips Hue, Shelly, Tasmota und mehr über ein Web-Dashboard.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "hue-pair": "node server.js hue-pair"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
