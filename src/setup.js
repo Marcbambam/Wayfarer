@@ -29,6 +29,14 @@ export class Setup {
     this.autoDemo = false;
   }
 
+  // Beispielgeräte ein- oder ausschalten
+  async setDemo(enabled) {
+    await this.commit((cfg) => {
+      cfg.integrations = cfg.integrations.filter((i) => i.type !== 'demo');
+      if (enabled) cfg.integrations.unshift({ type: 'demo' });
+    });
+  }
+
   // Shelly-/Tasmota-Geräte: [{ name, room?, host, gen?, kind, channel?, relay?, color? }]
   async addDevices(type, devices) {
     if (!['shelly', 'tasmota'].includes(type)) throw new HubError(400, `Typ ${type} kann so nicht hinzugefügt werden`);

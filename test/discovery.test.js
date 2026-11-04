@@ -181,3 +181,14 @@ test('API: /api/discover und /api/setup/devices', async () => {
     await sh.close();
   }
 });
+
+test('Beispielgeräte ausblenden und wieder einblenden', async () => {
+  const hub = new Hub({ integrations: [{ type: 'demo' }] }, { log: quiet });
+  await hub.refresh();
+  const setup = new Setup(hub, {});
+  await setup.setDemo(false);
+  assert.equal(hub.listDevices().length, 0);
+  assert.deepEqual(hub.config.integrations, []);
+  await setup.setDemo(true);
+  assert.ok(hub.listDevices().length > 5);
+});

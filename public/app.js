@@ -144,7 +144,20 @@ function renderScenes() {
   }
 }
 
+function renderDemoBanner() {
+  $('#demo-banner').hidden = !state.integrations.some((i) => i.type === 'Demo');
+}
+
+$('#btn-demo-scan').onclick = () => { openSettings(); runScan(); };
+$('#btn-demo-off').onclick = async () => {
+  try {
+    await api('/setup/demo', { method: 'POST', body: { enabled: false } });
+    toast('Beispielgeräte ausgeblendet');
+  } catch (err) { toast(err.message, true); }
+};
+
 function renderSummary() {
+  renderDemoBanner();
   const all = [...state.devices.values()];
   const lights = all.filter((d) => d.type === 'light' && d.state.on).length;
   const bad = state.integrations.filter((i) => !i.ok).length;

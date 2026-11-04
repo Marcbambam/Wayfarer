@@ -158,3 +158,12 @@ dialog input:not([type="checkbox"]) {
 .found .warn { color: var(--bad); font-size: 13px; }
 @media (max-width: 480px) { .found-dev { grid-template-columns: auto 1fr; } .found-dev .room-in { grid-column: 2; } }
 .found > button { align-self: flex-start; }
+
+.banner {
+  display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  background: var(--card-on); border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line));
+  border-radius: var(--radius); padding: 14px 16px; margin: 4px 0 16px;
+}
+.banner[hidden] { display: none; }
+.banner .small { color: var(--muted); margin-top: 2px; }
+.banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }

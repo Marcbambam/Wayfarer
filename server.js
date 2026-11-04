@@ -129,6 +129,7 @@ export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanO
     if (m === 'POST' && res0 === 'setup') {
       const body = await readBody(req);
       if (id === 'devices') return json(res, 201, { added: await setup.addDevices(body.type, body.devices) });
+      if (id === 'demo') { await setup.setDemo(Boolean(body.enabled)); return json(res, 200, { ok: true }); }
       if (id === 'hue') { await setup.addHue(body.host); return json(res, 201, { ok: true }); }
       if (id === 'homeassistant') { await setup.addHomeAssistant(body.url, body.token); return json(res, 201, { ok: true }); }
     }
