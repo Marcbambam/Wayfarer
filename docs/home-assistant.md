@@ -1,6 +1,8 @@
 # Deine Geräte über Home Assistant einbinden
 
-Diese Anleitung bindet **LG-Fernseher, Homematic-IP-Heizung und -Türschlossantrieb, LUPUS-Alarmanlage und Dreame-Saugroboter** an. Home Assistant spricht mit den Geräten, und das Wayfarer-Dashboard zeigt sie alle an einem Ort an.
+Diese Anleitung bindet **Homematic-IP-Heizung und -Türschlossantrieb sowie den Dreame-Saugroboter** an. Home Assistant spricht mit den Geräten, und das Wayfarer-Dashboard zeigt sie alle an einem Ort an.
+
+> **LG-Fernseher und LUPUS-Alarmanlage brauchen kein Home Assistant.** Die bindet das Dashboard direkt ein: **⚙︎ → „Netzwerk durchsuchen“** (siehe README). Die Abschnitte dazu weiter unten sind nur für den Fall gedacht, dass du sie trotzdem lieber über Home Assistant laufen lässt.
 
 ```
 Geräte  ──►  Home Assistant  ──►  Wayfarer-Dashboard (Handy, PC, Tablet)
@@ -30,7 +32,7 @@ In Home Assistant: **Einstellungen → Bereiche, Labels & Zonen**. Leg deine Rä
 
 Alle Integrationen fügst du so hinzu: **Einstellungen → Geräte & Dienste → „+ Integration hinzufügen“** und dann nach dem Namen suchen.
 
-### LG-Fernseher (webOS)
+### LG-Fernseher (webOS): optional, geht auch direkt
 
 1. Fernseher einschalten.
 2. Integration **„LG webOS TV“** hinzufügen. Meist wird der Fernseher schon automatisch vorgeschlagen.
@@ -55,7 +57,7 @@ Im Dashboard hat das Schloss drei Knöpfe:
 - **Entriegeln**, mit Rückfrage
 - **„Tür öffnen“** zieht die Falle zurück, ebenfalls mit Rückfrage.
 
-### LUPUS-Alarmanlage
+### LUPUS-Alarmanlage: optional, geht auch direkt
 
 1. Integration **„Lupus Electronics LUPUSEC“** hinzufügen.
 2. IP-Adresse der Alarmzentrale, Benutzername und Passwort eintragen.

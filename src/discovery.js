@@ -1,4 +1,5 @@
 import { networkInterfaces } from 'node:os';
+import { WebOsConnection } from './adapters/lgtv.js';
 
 // Durchsucht das Heimnetz nach bekannten Smart-Home-Geräten, indem jede
 // Adresse im Subnetz kurz per HTTP angefragt wird. Erkannt werden:
@@ -6,6 +7,8 @@ import { networkInterfaces } from 'node:os';
 //   • Tasmota                 GET /cm?cmnd=Status
 //   • Philips Hue Bridge      GET /api/config   (liefert bridgeid ohne Login)
 //   • Home Assistant          GET :8123/manifest.json
+//   • LG-Fernseher (webOS)    WebSocket :3000/:3001, "hello"
+//   • LUPUS XT2 Plus/XT3/XT4  GET /action/tokenGet (Login nötig) + Startseite enthält "Lupus"
 
 // ---- Subnetze ----------------------------------------------------------
 
@@ -88,7 +91,11 @@ async function probeShelly(base, ip, timeout) {
 
 async function probeTasmota(base, ip, timeout) {
   const s = await getJson(`${base}/cm?cmnd=Status`, timeout);
-  if (s?.__auth) return { type: 'tasmota', host: ip, name: `Tasmota ${ip}`, needsAuth: true, devices: [] };
+  // Tasmota mit Web-Passwort antwortet {"WARNING":"Need user=<username>&password=<password>"};
+  // ein bloßes HTTP 401 kann jedes beliebige Gerät sein.
+  if (typeof s?.WARNING === 'string' && /need user/i.test(s.WARNING)) {
+    return { type: 'tasmota', host: ip, name: `Tasmota ${ip}`, needsAuth: true, devices: [] };
+  }
   if (!s?.Status || s.Status.Module === undefined) return null;
   const st = (await getJson(`${base}/cm?cmnd=State`, timeout)) ?? {};
   const names = Array.isArray(s.Status.FriendlyName) ? s.Status.FriendlyName : [];
@@ -119,14 +126,53 @@ async function probeHomeAssistant(base, ip, timeout) {
   return { type: 'homeassistant', host: ip, url: base, name: 'Home Assistant', needsToken: true };
 }
 
-// Eine einzelne Adresse prüfen. port/haPort sind für Tests einstellbar.
-export async function probeHost(ip, { port = 80, haPort = 8123, timeout = 1500 } = {}) {
+async function probeLgTv(ip, ports, timeout) {
+  const conn = new WebOsConnection(ip, { ports, timeout });
+  try {
+    await conn.open();
+    const hello = await conn.hello();
+    if (!/webos/i.test(hello.deviceOS ?? '') && hello.deviceType !== 'tv') return null;
+    return {
+      type: 'lgtv', host: ip, name: hello.deviceModel ? `LG ${hello.deviceModel}` : 'LG-Fernseher',
+      model: hello.deviceOSVersion ? `webOS ${hello.deviceOSVersion}` : 'webOS', needsPairing: true,
+    };
+  } catch {
+    return null;
+  } finally {
+    conn.close();
+  }
+}
+
+async function probeLupus(base, ip, timeout) {
+  let res;
+  try {
+    res = await fetch(`${base}/action/tokenGet`, { signal: AbortSignal.timeout(timeout) });
+  } catch {
+    return null;
+  }
+  if (res.status !== 401) return null;
+  const realm = res.headers.get('www-authenticate') ?? '';
+  let home = '';
+  if (!/lupus/i.test(realm)) {
+    try {
+      const r = await fetch(`${base}/`, { signal: AbortSignal.timeout(timeout) });
+      home = (await r.text()).slice(0, 5000);
+    } catch { /* egal */ }
+  }
+  if (!/lupus/i.test(realm + home)) return null;
+  return { type: 'lupus', host: ip, name: 'LUPUS-Alarmanlage', needsLogin: true };
+}
+
+// Eine einzelne Adresse prüfen. port/haPort/lgPorts sind für Tests einstellbar.
+export async function probeHost(ip, { port = 80, haPort = 8123, lgPorts = { ws: 3000, wss: 3001 }, timeout = 1500 } = {}) {
   const base = port === 80 ? `http://${ip}` : `http://${ip}:${port}`;
   const found = await Promise.all([
     probeShelly(base, ip, timeout),
     probeTasmota(base, ip, timeout),
     probeHue(base, ip, timeout),
     probeHomeAssistant(`http://${ip}:${haPort}`, ip, timeout),
+    probeLgTv(ip, lgPorts, timeout),
+    probeLupus(base, ip, timeout),
   ]);
   return found.filter(Boolean);
 }
@@ -146,7 +192,7 @@ export async function scanNetwork({ subnets, concurrency = 64, onProgress, ...pr
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, hosts.length) }, worker));
-  const order = { homeassistant: 0, hue: 1, shelly: 2, tasmota: 3 };
+  const order = { homeassistant: 0, lupus: 1, lgtv: 2, hue: 3, shelly: 4, tasmota: 5 };
   results.sort((a, b) => order[a.type] - order[b.type] || ipToInt(a.host) - ipToInt(b.host));
   return { subnets: nets, scanned: hosts.length, results };
 }
@@ -163,10 +209,12 @@ export function markConfigured(config, results) {
   for (const i of integ) {
     if (i.type === 'hue') known.add(`hue|${hostOf(i.bridge ?? '')}`);
     if (i.type === 'homeassistant') known.add(`homeassistant|${hostOf(i.url ?? '')}`);
+    if (i.type === 'lupus') known.add(`lupus|${hostOf(i.host ?? '')}`);
+    if (i.type === 'lgtv') for (const d of i.devices ?? []) known.add(`lgtv|${hostOf(d.host ?? '')}`);
     for (const d of i.devices ?? []) known.add(`${i.type}|${hostOf(d.host ?? '')}|${d.channel ?? d.relay ?? ''}`);
   }
   return results.map((r) => {
-    if (r.type === 'hue' || r.type === 'homeassistant') return { ...r, configured: known.has(`${r.type}|${r.host}`) };
+    if (['hue', 'homeassistant', 'lupus', 'lgtv'].includes(r.type)) return { ...r, configured: known.has(`${r.type}|${r.host}`) };
     const devices = (r.devices ?? []).map((d) => ({ ...d, configured: known.has(`${r.type}|${d.host}|${d.channel ?? d.relay ?? ''}`) }));
     return { ...r, devices, configured: devices.length > 0 && devices.every((d) => d.configured) };
   });

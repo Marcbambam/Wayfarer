@@ -184,3 +184,17 @@ dialog input:not([type="checkbox"]) {
 .battery { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; }
 .battery span { display: block; height: 100%; background: var(--ok); }
 dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+
+.found-dev.two { grid-template-columns: 1fr 1fr; }
+.found > input[type="password"] { width: 100%; }
+.manual { margin-top: 10px; }
+.manual summary { cursor: pointer; color: var(--muted); }
+.manual select {
+  font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text);
+}
+@media (max-width: 480px) {
+  .found-dev.two { grid-template-columns: 1fr; }
+  .found-dev.two .room-in { grid-column: auto; }
+  .manual .row { flex-wrap: wrap; }
+}

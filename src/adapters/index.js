@@ -4,6 +4,8 @@ import { HueAdapter } from './hue.js';
 import { ShellyAdapter } from './shelly.js';
 import { TasmotaAdapter } from './tasmota.js';
 import { WebhookAdapter } from './webhook.js';
+import { LgTvAdapter } from './lgtv.js';
+import { LupusAdapter } from './lupus.js';
 
 export const ADAPTERS = {
   demo: DemoAdapter,
@@ -12,6 +14,8 @@ export const ADAPTERS = {
   shelly: ShellyAdapter,
   tasmota: TasmotaAdapter,
   webhook: WebhookAdapter,
+  lgtv: LgTvAdapter,
+  lupus: LupusAdapter,
 };
 
 export function createAdapter({ type, id, ...config }) {

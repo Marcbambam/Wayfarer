@@ -25,6 +25,10 @@ node server.js          # startet im Demo-Modus mit simulierten Geräten
 | **Tasmota** | automatisch inkl. Dimmer, Farbe und Mehrfachsteckdosen | Name und Raum eingeben → „Hinzufügen“ |
 | **Philips Hue Bridge** | automatisch | Link-Taste an der Bridge drücken → „Verbinden“ |
 | **Home Assistant** | automatisch (Port 8123) | Zugriffstoken einfügen → „Verbinden“ |
+| **LG-Fernseher** (webOS) | automatisch | „Verbinden“ → am Fernseher „Zulassen“ |
+| **LUPUS XT2 Plus / XT3 / XT4** | automatisch, sonst per IP-Adresse | Benutzer, Passwort und eigene PIN → „Verbinden“ |
+
+Wird ein Gerät nicht gefunden: **„Gerät wird nicht gefunden? Per IP-Adresse hinzufügen“** im selben Fenster.
 
 Gefundene Geräte werden in `config.json` gespeichert und erscheinen sofort, ohne Neustart. Beim ersten echten Gerät verschwinden die Demo-Geräte.
 
@@ -58,11 +62,13 @@ npm start
 | `shelly` | Shelly-Relais, -Steckdosen, -Dimmer und -Rollladen (Gen1 und Gen2/Plus/Pro) | IP-Adresse je Gerät |
 | `tasmota` | Geräte mit Tasmota-Firmware (Steckdosen, LED-Strips, Lampen) | IP-Adresse je Gerät |
 | `webhook` | Alles mit HTTP-Schnittstelle: ESPHome, Node-RED, IFTTT, Eigenbau | URL pro Aktion |
+| `lgtv` | LG-Fernseher mit webOS: An/Aus (Einschalten per Wake-on-LAN), Lautstärke, Play/Pause, aktuelle App | IP-Adresse; Kopplung per Abfrage am Fernseher |
+| `lupus` | LUPUSEC XT2 Plus/XT3/XT4: Scharf (abwesend/zuhause), Unscharf, Tür-/Fensterkontakte | IP-Adresse, Benutzer, Passwort |
 | `demo` | Simulierte Geräte zum Ausprobieren | – |
 
 > **Tipp:** Hast du Geräte vieler verschiedener Marken (Alexa-, Google- oder Tuya-Geräte, Thermostate, Saugroboter …), ist **Home Assistant** der einfachste Weg. Dort richtest du die Hersteller einmal ein, und dieses Dashboard zeigt dann alles an.
 >
-> 📖 **Schritt-für-Schritt-Anleitung für LG-Fernseher, Homematic IP, LUPUS-Alarmanlage und Dreame-Saugroboter: [docs/home-assistant.md](docs/home-assistant.md)**
+> 📖 **Schritt-für-Schritt-Anleitung für Homematic IP und Dreame-Saugroboter über Home Assistant: [docs/home-assistant.md](docs/home-assistant.md)**
 
 ### Home Assistant
 
@@ -87,6 +93,28 @@ npm run hue-pair -- 192.168.1.20   # danach die Link-Taste auf der Bridge drück
 ```
 
 Den ausgegebenen Key als `username` eintragen.
+
+### LG-Fernseher
+
+Am einfachsten über die Gerätesuche. Manuell in `config.json` (den `key` bekommst du nur über die Kopplung im Dashboard):
+
+```json
+{ "type": "lgtv", "devices": [ { "id": "wz", "name": "Fernseher", "room": "Wohnzimmer", "host": "192.168.1.40", "key": "…", "mac": "aa:bb:cc:dd:ee:ff" } ] }
+```
+
+**Einschalten aus dem Standby:** Ein ausgeschalteter LG-Fernseher reagiert nur auf ein Wake-on-LAN-Signal. Dafür am Fernseher **„Über WLAN einschalten“** bzw. **„Mit Mobilgerät einschalten“** aktivieren (*Einstellungen → Allgemein → Geräte → TV-Verwaltung*, je nach Modell auch unter *Netzwerk*). Die MAC-Adresse liest die Zentrale beim Koppeln selbst aus.
+
+### LUPUS-Alarmanlage (XT2 Plus, XT3, XT4)
+
+```json
+{ "type": "lupus", "host": "192.168.1.30", "username": "smarthome", "password": "…", "pin": "4711", "room": "Flur" }
+```
+
+- Empfehlung: In der LUPUS-Weboberfläche einen **eigenen Benutzer** für die Zentrale anlegen.
+- `pin` ist eine PIN, die du selbst festlegst. Das Dashboard fragt danach, bevor es unscharf schaltet. Ohne PIN gibt es nur eine Rückfrage.
+- Tür-/Fensterkontakte werden mit angezeigt (`"sensors": false` schaltet das ab).
+- **Noch nicht unterstützt:** Erkennen, dass gerade ein Alarm ausgelöst wurde. Dafür weiter die LUPUS-App bzw. Benachrichtigungen der Anlage nutzen.
+- Das Passwort steht im Klartext in `config.json`. Setz deshalb unbedingt einen Zugangscode (siehe „Zugriffsschutz“).
 
 ### Shelly / Tasmota
 

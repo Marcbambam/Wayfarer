@@ -183,6 +183,7 @@ function isOn(d) {
   if (d.type === 'lock') return d.state.locked === false;
   if (d.type === 'vacuum') return ['cleaning', 'returning'].includes(d.state.status);
   if (d.type === 'alarm') return d.state.alarm !== 'disarmed';
+  if (d.type === 'sensor') return d.state.open === true;
   return d.state.on === true;
 }
 
@@ -198,10 +199,10 @@ function describe(d) {
       if (s.lockState === 'open' || s.lockState === 'opening') return 'Tür geöffnet';
       return s.locked ? 'Verriegelt' : 'Entriegelt';
     case 'media': return !s.on ? 'Aus' : s.playing ? 'Spielt' : 'Pausiert';
-    case 'tv': return !s.on ? 'Aus' : s.playing ? 'Läuft' : 'An';
+    case 'tv': return !s.on ? 'Aus' : s.source ? `An · ${s.source}` : s.playing ? 'Läuft' : 'An';
     case 'vacuum': return `${VACUUM_STATUS[s.status] ?? s.status ?? '–'}${s.battery != null ? ` · Akku ${s.battery} %` : ''}`;
     case 'alarm': return ALARM_STATUS[s.alarm] ?? s.alarm ?? '–';
-    case 'sensor': return 'Sensor';
+    case 'sensor': return s.open !== undefined ? 'Tür-/Fensterkontakt' : 'Sensor';
     default: return s.on == null ? '–' : s.on ? 'An' : 'Aus';
   }
 }
@@ -211,7 +212,8 @@ function deviceCard(d) {
   const caps = new Set(d.capabilities);
   const alert = (d.type === 'alarm' && s.alarm === 'triggered') || s.lockState === 'jammed' || (d.type === 'vacuum' && s.status === 'error');
   const card = el('article', { class: `card${isOn(d) ? ' on' : ''}${alert ? ' alert' : ''}${d.online ? '' : ' offline'}`, 'data-id': d.id });
-  const ico = el('div', { class: 'ico' }, d.type === 'lock' && s.locked === false ? '🔓' : ICONS[d.type] ?? '•');
+  const icon = (d.type === 'lock' && s.locked === false && '🔓') || (s.open !== undefined && '🚪') || ICONS[d.type] || '•';
+  const ico = el('div', { class: 'ico' }, icon);
   if (d.type === 'light' && s.on && s.color) ico.style.background = s.color;
 
   const head = el('div', { class: 'card-head' }, ico,
@@ -315,9 +317,18 @@ function deviceCard(d) {
     card.append(btns);
   }
   if (caps.has('media') && (d.type !== 'tv' || s.on)) {
-    const b = el('button', { class: 'ghost small' }, s.playing ? 'Pause' : '▶ Abspielen');
-    b.onclick = () => command(d.id, s.playing ? 'pause' : 'play');
-    card.append(el('div', { class: 'btns' }, b));
+    if (d.type === 'tv' && s.playing === undefined) {
+      // Fernseher ohne Wiedergabestatus (z. B. LG direkt): beide Knöpfe anbieten
+      const play = el('button', { class: 'ghost small' }, '▶ Abspielen');
+      const pause = el('button', { class: 'ghost small' }, 'Pause');
+      play.onclick = () => command(d.id, 'play');
+      pause.onclick = () => command(d.id, 'pause');
+      card.append(el('div', { class: 'btns' }, play, pause));
+    } else {
+      const b = el('button', { class: 'ghost small' }, s.playing ? 'Pause' : '▶ Abspielen');
+      b.onclick = () => command(d.id, s.playing ? 'pause' : 'play');
+      card.append(el('div', { class: 'btns' }, b));
+    }
     card.append(slider('Lautstärke', s.volume ?? 0, '%', (v) => command(d.id, 'set_volume', v)));
   }
   if (caps.has('read')) {
@@ -365,7 +376,10 @@ function openSettings() {
 
 // ---- Gerätesuche --------------------------------------------------------
 
-const TYPE_LABEL = { homeassistant: 'Home Assistant', hue: 'Philips Hue', shelly: 'Shelly', tasmota: 'Tasmota' };
+const TYPE_LABEL = {
+  homeassistant: 'Home Assistant', hue: 'Philips Hue', shelly: 'Shelly', tasmota: 'Tasmota',
+  lgtv: 'LG-Fernseher', lupus: 'LUPUS-Alarmanlage',
+};
 
 $('#btn-scan').onclick = () => runScan();
 
@@ -397,7 +411,7 @@ async function runScan() {
 function foundCard(f) {
   const card = el('div', { class: 'found' });
   card.append(el('div', { class: 'found-head' },
-    el('strong', {}, f.elements.name),
+    el('strong', {}, f.name),
     el('span', { class: 'muted small' }, `${TYPE_LABEL[f.type]} · ${f.host}${f.model ? ` · ${f.model}` : ''}`)));
 
   if (f.configured) {
@@ -420,6 +434,45 @@ function foundCard(f) {
         await api('/setup/hue', { method: 'POST', body: { host: f.host } });
         done('✓ Verbunden – Lampen erscheinen gleich im Dashboard');
       } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = 'Verbinden'; }
+    };
+    card.append(b);
+    return card;
+  }
+
+  if (f.type === 'lgtv') {
+    card.append(el('p', { class: 'small' }, 'Fernseher einschalten und auf „Verbinden“ klicken. Am Fernseher erscheint dann eine Abfrage: mit der Fernbedienung „Zulassen“ wählen (du hast 60 Sekunden).'));
+    const name = el('input', { type: 'text', value: 'Fernseher', 'aria-label': 'Name' });
+    const room = el('input', { type: 'text', class: 'room-in', placeholder: 'Raum', list: 'room-list', 'aria-label': 'Raum' });
+    card.append(el('div', { class: 'found-dev two' }, name, room));
+    const b = el('button', { type: 'button' }, 'Verbinden');
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Warte auf „Zulassen“ am Fernseher …';
+      try {
+        const r = await api('/setup/lgtv', { method: 'POST', body: { host: f.host, name: name.value.trim(), room: room.value.trim() } });
+        done(r.mac
+          ? '✓ Verbunden. Tipp: Am Fernseher „Über WLAN einschalten“ aktivieren, damit er sich auch aus dem Standby einschalten lässt.'
+          : '✓ Verbunden. Einschalten aus dem Standby geht noch nicht (MAC-Adresse unbekannt).');
+      } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = 'Verbinden'; }
+    };
+    card.append(b);
+    ensureRoomList();
+    return card;
+  }
+
+  if (f.type === 'lupus') {
+    card.append(el('p', { class: 'small' }, 'Zugangsdaten der LUPUS-Weboberfläche eingeben. Tipp: In der Anlage einen eigenen Benutzer dafür anlegen.'));
+    const user = el('input', { type: 'text', placeholder: 'Benutzername', autocomplete: 'off', 'aria-label': 'Benutzername' });
+    const pass = el('input', { type: 'password', placeholder: 'Passwort', autocomplete: 'off', 'aria-label': 'Passwort' });
+    const pin = el('input', { type: 'password', inputmode: 'numeric', placeholder: 'PIN fürs Unscharfschalten (empfohlen)', autocomplete: 'off', 'aria-label': 'PIN' });
+    card.append(el('div', { class: 'found-dev two' }, user, pass), pin);
+    card.append(el('p', { class: 'muted small' }, 'Die PIN legst du hier selbst fest. Das Dashboard fragt danach, bevor es die Anlage unscharf schaltet.'));
+    const b = el('button', { type: 'button' }, 'Verbinden');
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await api('/setup/lupus', { method: 'POST', body: { host: f.host, username: user.value.trim(), password: pass.value, pin: pin.value.trim() || undefined } });
+        done(`✓ Verbunden – Alarmanlage${r.sensors ? ` und ${r.sensors} Tür-/Fensterkontakte` : ''} erscheinen gleich im Dashboard`);
+      } catch (err) { toast(err.message, true); b.disabled = false; }
     };
     card.append(b);
     return card;
@@ -549,6 +602,7 @@ $('#dlg-settings').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
   e.preventDefault();
   if (e.target.id === 'scan-subnet') runScan();
+  if (e.target.id === 'manual-ip') $('#btn-manual').click();
 });
 
 
@@ -612,3 +666,15 @@ function askCode(title) {
     dlg.showModal();
   });
 }
+
+// ---- Gerät per IP-Adresse hinzufügen -----------------------------------
+
+$('#btn-manual').onclick = () => {
+  const ip = $('#manual-ip').value.trim();
+  const type = $('#manual-type').value;
+  if (!/^[\w.-]+(:\d+)?$/.test(ip)) return toast('Bitte eine IP-Adresse eingeben, z. B. 192.168.178.40', true);
+  const names = { lgtv: 'LG-Fernseher', lupus: 'LUPUS-Alarmanlage' };
+  const card = foundCard({ type, host: ip, name: names[type] });
+  $('#scan-results').prepend(card);
+  card.querySelector('input')?.focus();
+};

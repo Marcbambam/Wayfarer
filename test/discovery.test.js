@@ -20,6 +20,7 @@ async function fake(routes) {
   return { port: srv.address().port, close: () => new Promise((r) => { srv.closeAllConnections(); srv.close(r); }) };
 }
 const NO_HA = 1; // geschlossener Port
+const NO_LG = { ws: 1, wss: 1 };
 const quiet = { warn() {}, info() {} };
 
 test('Subnetze berechnen', () => {
@@ -48,11 +49,11 @@ test('Shelly Gen1 (Rollladen) und Gen2 (2 Kanäle) erkennen', async () => {
     '/rpc/Shelly.GetStatus': { 'switch:0': {}, 'switch:1': {}, sys: {} },
   });
   try {
-    const [a] = await probeHost('127.0.0.1', { port: g1.port, haPort: NO_HA });
+    const [a] = await probeHost('127.0.0.1', { port: g1.port, haPort: NO_HA, lgPorts: NO_LG });
     assert.equal(a.type, 'shelly');
     assert.equal(a.name, 'Rollo Bad');
     assert.deepEqual(a.devices, [{ name: 'Rollo Bad', host: '127.0.0.1', gen: 1, kind: 'cover', channel: 0 }]);
-    const [b] = await probeHost('127.0.0.1', { port: g2.port, haPort: NO_HA });
+    const [b] = await probeHost('127.0.0.1', { port: g2.port, haPort: NO_HA, lgPorts: NO_LG });
     assert.equal(b.gen, 2);
     assert.deepEqual(b.devices.map((d) => [d.name, d.kind, d.channel]), [['Shelly Plus2PM 1', 'switch', 0], ['Shelly Plus2PM 2', 'switch', 1]]);
   } finally {
@@ -68,12 +69,12 @@ test('Tasmota, Hue und Home Assistant erkennen', async () => {
   const hue = await fake({ '/api/config': { name: 'Philips hue', bridgeid: '001788FFFE123456', modelid: 'BSB002' } });
   const ha = await fake({ '/manifest.json': { name: 'Home Assistant', short_name: 'Assistant' } });
   try {
-    const [t] = await probeHost('127.0.0.1', { port: tas.port, haPort: NO_HA });
+    const [t] = await probeHost('127.0.0.1', { port: tas.port, haPort: NO_HA, lgPorts: NO_LG });
     assert.deepEqual(t.devices, [{ name: 'LED Strip', host: '127.0.0.1', kind: 'light', color: true }]);
-    const [h] = await probeHost('127.0.0.1', { port: hue.port, haPort: NO_HA });
+    const [h] = await probeHost('127.0.0.1', { port: hue.port, haPort: NO_HA, lgPorts: NO_LG });
     assert.equal(h.type, 'hue');
     assert.equal(h.needsPairing, true);
-    const found = await probeHost('127.0.0.1', { port: NO_HA, haPort: ha.port });
+    const found = await probeHost('127.0.0.1', { port: NO_HA, haPort: ha.port, lgPorts: NO_LG });
     assert.equal(found.length, 1);
     assert.equal(found[0].type, 'homeassistant');
     assert.equal(found[0].url, `http://127.0.0.1:${ha.port}`);
@@ -86,9 +87,9 @@ test('Passwortgeschützte Geräte werden gemeldet, fremde Server ignoriert', asy
   const locked = await fake({ '/shelly': { type: 'SHPLG-S', auth: true }, '/status': 401, '/settings': 401 });
   const other = await fake({ '/': { hello: 'world' }, '/api/config': { name: 'Router' } });
   try {
-    const [s] = await probeHost('127.0.0.1', { port: locked.port, haPort: NO_HA });
+    const [s] = await probeHost('127.0.0.1', { port: locked.port, haPort: NO_HA, lgPorts: NO_LG });
     assert.equal(s.needsAuth, true);
-    assert.deepEqual(await probeHost('127.0.0.1', { port: other.port, haPort: NO_HA }), []);
+    assert.deepEqual(await probeHost('127.0.0.1', { port: other.port, haPort: NO_HA, lgPorts: NO_LG }), []);
   } finally {
     await locked.close(); await other.close();
   }
@@ -97,7 +98,7 @@ test('Passwortgeschützte Geräte werden gemeldet, fremde Server ignoriert', asy
 test('scanNetwork und Abgleich mit vorhandener Konfiguration', async () => {
   const sh = await fake({ '/shelly': { type: 'SHPLG-S', auth: false }, '/status': { relays: [{}] }, '/settings': { name: 'Kaffee' } });
   try {
-    const { scanned, results } = await scanNetwork({ subnets: ['127.0.0.0/30'], port: sh.port, haPort: NO_HA, timeout: 500 });
+    const { scanned, results } = await scanNetwork({ subnets: ['127.0.0.0/30'], port: sh.port, haPort: NO_HA, lgPorts: NO_LG, timeout: 500 });
     assert.equal(scanned, 2);
     assert.equal(results.length, 1);
     assert.equal(results[0].devices[0].kind, 'plug');
@@ -163,7 +164,7 @@ test('Home Assistant per Token verbinden', async () => {
 test('API: /api/discover und /api/setup/devices', async () => {
   const sh = await fake({ '/shelly': { type: 'SHSW-1', auth: false }, '/status': { relays: [{}] }, '/settings': { name: 'Licht Keller' } });
   const hub = new Hub({ integrations: [] }, { log: quiet });
-  const app = createApp(hub, { scanOptions: { subnets: ['127.0.0.0/30'], port: sh.port, haPort: NO_HA, timeout: 500 } });
+  const app = createApp(hub, { scanOptions: { subnets: ['127.0.0.0/30'], port: sh.port, haPort: NO_HA, lgPorts: NO_LG, timeout: 500 } });
   await new Promise((r) => app.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${app.address().port}`;
   const post = (p, body) => fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
