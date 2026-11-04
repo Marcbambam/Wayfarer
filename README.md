@@ -61,6 +61,8 @@ npm start
 | `demo` | Simulierte Geräte zum Ausprobieren | – |
 
 > **Tipp:** Hast du Geräte vieler verschiedener Marken (Alexa-, Google- oder Tuya-Geräte, Thermostate, Saugroboter …), ist **Home Assistant** der einfachste Weg. Dort richtest du die Hersteller einmal ein, und dieses Dashboard zeigt dann alles an.
+>
+> 📖 **Schritt-für-Schritt-Anleitung für LG-Fernseher, Homematic IP, LUPUS-Alarmanlage und Dreame-Saugroboter: [docs/home-assistant.md](docs/home-assistant.md)**
 
 ### Home Assistant
 
@@ -72,7 +74,11 @@ npm start
   "rooms": { "light.kueche_decke": "Küche" } }
 ```
 
-Unterstützte Domains: `light`, `switch`, `input_boolean`, `fan`, `climate`, `cover`, `lock`, `media_player`, `sensor`, `binary_sensor`. Mit `"domains": [...]` einschränken und mit `"exclude": [...]` einzelne Entitäten ausblenden.
+Unterstützte Domains: `light`, `switch`, `input_boolean`, `fan`, `climate`, `cover`, `lock` (inkl. „Tür öffnen“), `media_player` (Fernseher, Lautsprecher), `vacuum` (Saugroboter), `alarm_control_panel` (Alarmanlagen), `sensor`, `binary_sensor`.
+
+- **Räume** werden automatisch aus den Bereichen in Home Assistant übernommen.
+- **Sensoren:** Standardmäßig kommen nur Temperatur, Luftfeuchte und Tür-/Fensterkontakte mit, die einem Bereich zugeordnet sind. Mit `"sensors": "all"` kommen alle.
+- Mit `"domains": [...]` einschränken und mit `"exclude": [...]` einzelne Entitäten weglassen.
 
 ### Philips Hue
 
@@ -90,7 +96,9 @@ Jedes Gerät mit IP-Adresse eintragen (Beispiele in `config.example.json`). Bei 
 
 ## Räume, Namen, ausblenden
 
-Jedes Gerät hat eine ID der Form `integration:gerät` (in der API unter `/api/devices` sichtbar). Überschreiben kannst du so:
+Am einfachsten direkt im Dashboard: **⋯** auf einer Gerätekarte → Name, Raum, „Im Dashboard ausblenden“. Ausgeblendete Geräte holst du unter **⚙︎** zurück. Die Einstellungen landen in `data/user.json`.
+
+Alternativ in `config.json`. Jedes Gerät hat eine ID der Form `integration:gerät` (in der API unter `/api/devices` sichtbar). Überschreiben kannst du so:
 
 ```json
 "devices": {
@@ -110,7 +118,9 @@ Szenen werden entweder in `config.json` definiert oder direkt im Dashboard angel
 ]}
 ```
 
-**Aktionen:** `turn_on`, `turn_off`, `toggle`, `set_brightness` (0–100), `set_color` (`#rrggbb`), `set_target_temp` (5–35), `set_position` (0–100), `open`, `close`, `stop`, `lock`, `unlock`, `play`, `pause`, `set_volume` (0–100)
+**Aktionen:** `turn_on`, `turn_off`, `toggle`, `set_brightness` (0–100), `set_color` (`#rrggbb`), `set_target_temp` (5–35), `set_position` (0–100), `open`, `close`, `stop`, `lock`, `unlock`, `unlatch` (Tür öffnen), `play`, `pause`, `set_volume` (0–100), `start`, `return_to_base`, `locate` (Saugroboter), `arm_away`, `arm_home`, `arm_night`, `disarm` (Alarmanlage, `value` = Code)
+
+> **Sicherheitsregel:** `unlock`, `unlatch` und `disarm` sind nie als Gruppenbefehl erlaubt (`room`/`type`), nur mit `device` für ein bestimmtes Gerät. „Szene aus aktuellem Zustand“ übernimmt bei Schlössern nur „verriegeln“ und bei Alarmanlagen nur „scharf schalten“.
 
 ## Zeitpläne
 
@@ -135,6 +145,7 @@ Alle Endpunkte verlangen `Authorization: Bearer <token>`, wenn ein Token gesetzt
 |---|---|---|
 | GET | `/api/devices` | Alle Geräte mit Zustand |
 | POST | `/api/devices/:id/command` | `{ "action": "turn_on" }` |
+| PATCH | `/api/devices/:id` | Im Dashboard umbenennen/verschieben/ausblenden: `{ "name", "room", "hidden" }` |
 | POST | `/api/command` | Gruppenbefehl: `{ "room": "Küche", "type": "light", "action": "turn_off" }` |
 | GET / POST | `/api/scenes` | Szenen auflisten / anlegen (`{ name, actions }` oder `{ name, capture: [ids] }`) |
 | POST | `/api/scenes/:id/run` | Szene ausführen |

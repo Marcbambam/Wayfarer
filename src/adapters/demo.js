@@ -1,5 +1,5 @@
 import { Adapter } from './base.js';
-import { makeDevice } from '../device.js';
+import { makeDevice, HubError } from '../device.js';
 
 // Simulierte Geräte – zum Ausprobieren ohne echte Hardware.
 export class DemoAdapter extends Adapter {
@@ -55,8 +55,23 @@ export class DemoAdapter extends Adapter {
         }),
         d('flur-tuer', {
           name: 'Haustür', room: 'Flur', type: 'lock',
-          capabilities: ['lock'],
+          capabilities: ['lock', 'lock_open'],
           state: { locked: true },
+        }),
+        d('flur-alarm', {
+          name: 'Alarmanlage', room: 'Flur', type: 'alarm',
+          capabilities: ['alarm'],
+          state: { alarm: 'disarmed', modes: ['home', 'away'], codeRequired: true, codeArmRequired: false },
+        }),
+        d('wz-sauger', {
+          name: 'Saugroboter', room: 'Wohnzimmer', type: 'vacuum',
+          capabilities: ['vacuum'],
+          state: { status: 'docked', battery: 100 },
+        }),
+        d('wz-fernseher', {
+          name: 'Fernseher', room: 'Wohnzimmer', type: 'tv',
+          capabilities: ['onoff', 'media'],
+          state: { on: false, playing: false, volume: 12 },
         }),
         d('flur-temp', {
           name: 'Luftfeuchtigkeit', room: 'Flur', type: 'sensor',
@@ -73,6 +88,14 @@ export class DemoAdapter extends Adapter {
     if (h) {
       const goal = h.state.on ? h.state.target : 17;
       h.state.temperature = +(h.state.temperature + Math.sign(goal - h.state.temperature) * Math.min(0.1, Math.abs(goal - h.state.temperature))).toFixed(1);
+    }
+    const v = this.devices.get('wz-sauger');
+    if (v) {
+      const st = v.state;
+      if (st.status === 'cleaning') st.battery = Math.max(5, st.battery - 1);
+      if (st.status === 'cleaning' && st.battery <= 20) st.status = 'returning';
+      else if (st.status === 'returning') st.status = 'docked';
+      else if (st.status === 'docked') st.battery = Math.min(100, st.battery + 2);
     }
     const s = this.devices.get('flur-temp');
     if (s) s.state.value = Math.max(35, Math.min(65, s.state.value + Math.round(Math.random() * 2 - 1)));
@@ -92,11 +115,24 @@ export class DemoAdapter extends Adapter {
       case 'set_position': s.position = value; break;
       case 'open': s.position = 100; break;
       case 'close': s.position = 0; break;
-      case 'stop': break;
+      case 'stop': if (dev.type === 'vacuum') s.status = 'idle'; break;
       case 'lock': s.locked = true; break;
       case 'unlock': s.locked = false; break;
+      case 'unlatch': s.locked = false; break;
       case 'play': s.playing = true; s.on = true; break;
-      case 'pause': s.playing = false; break;
+      case 'pause':
+        if (dev.type === 'vacuum') s.status = 'paused';
+        else s.playing = false;
+        break;
+      case 'start': s.status = 'cleaning'; break;
+      case 'return_to_base': s.status = 'returning'; break;
+      case 'locate': break;
+      case 'arm_away': s.alarm = 'armed_away'; break;
+      case 'arm_home': s.alarm = 'armed_home'; break;
+      case 'disarm':
+        if (s.codeRequired && value !== (this.config.alarmCode ?? '1234')) throw new HubError(400, 'Falscher Code');
+        s.alarm = 'disarmed';
+        break;
       case 'set_volume': s.volume = value; break;
       default:
     }

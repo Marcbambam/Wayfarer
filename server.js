@@ -88,6 +88,8 @@ export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanO
     if (res0 === 'devices') {
       if (m === 'GET' && !id) return json(res, 200, hub.listDevices({ includeHidden: url.searchParams.has('all') }));
       if (m === 'GET' && id && !sub) return json(res, 200, hub.getDevice(id));
+      // Im Dashboard umbenennen / Raum ändern / ausblenden: PATCH /api/devices/:id { name?, room?, hidden? }
+      if (m === 'PATCH' && id && !sub) return json(res, 200, await hub.setDeviceSettings(id, await readBody(req)));
       if (m === 'POST' && id && sub === 'command') return json(res, 200, await hub.command(id, await readBody(req)));
     }
 

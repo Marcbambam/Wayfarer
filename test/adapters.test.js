@@ -28,36 +28,69 @@ test('Home Assistant: Entitäten abbilden und Dienste aufrufen', async () => {
       return [
         { entity_id: 'light.kueche', state: 'on', attributes: { friendly_name: 'Küche', brightness: 128, supported_color_modes: ['xy'], rgb_color: [255, 0, 0] } },
         { entity_id: 'climate.wz', state: 'heat', attributes: { friendly_name: 'Heizung', current_temperature: 20, temperature: 22 } },
-        { entity_id: 'sensor.temp', state: '21.3', attributes: { friendly_name: 'Temp', unit_of_measurement: '°C' } },
+        { entity_id: 'sensor.temp', state: '21.3', attributes: { friendly_name: 'Temp', unit_of_measurement: '°C', device_class: 'temperature' } },
+        { entity_id: 'sensor.akku', state: '80', attributes: { friendly_name: 'Akku', device_class: 'battery' } },
+        { entity_id: 'sensor.temp_ohne_raum', state: '19', attributes: { device_class: 'temperature' } },
         { entity_id: 'switch.steckdose', state: 'unavailable', attributes: { device_class: 'outlet' } },
         { entity_id: 'automation.x', state: 'on', attributes: {} },
+        { entity_id: 'lock.haustuer', state: 'locked', attributes: { friendly_name: 'Haustür', supported_features: 1 } },
+        { entity_id: 'vacuum.dreame', state: 'docked', attributes: { friendly_name: 'Dreame', battery_level: 87 } },
+        { entity_id: 'alarm_control_panel.lupus', state: 'armed_away', attributes: { friendly_name: 'Lupus', supported_features: 3, code_format: 'number', code_arm_required: false } },
+        { entity_id: 'media_player.lg', state: 'off', attributes: { friendly_name: 'LG TV', device_class: 'tv' } },
       ];
+    }
+    if (method === 'POST' && url === '/api/template') {
+      return [['light.kueche', 'Küche'], ['sensor.temp', 'Wohnzimmer'], ['sensor.akku', 'Wohnzimmer'], ['vacuum.dreame', 'Wohnzimmer']];
     }
     if (method === 'POST' && url.startsWith('/api/services/')) return [];
     return undefined;
   });
   try {
-    const ha = createAdapter({ type: 'homeassistant', id: 'ha', url: `http://${srv.host}`, token: 'abc', rooms: { 'light.kueche': 'Küche' } });
+    const ha = createAdapter({ type: 'homeassistant', id: 'ha', url: `http://${srv.host}`, token: 'abc' });
     const devs = await ha.discover();
-    assert.equal(devs.length, 4);
-    const light = devs.find((d) => d.id === 'ha:light.kueche');
+    const ids = devs.map((d) => d.id).sort();
+    assert.deepEqual(ids, [
+      'ha:alarm_control_panel.lupus', 'ha:climate.wz', 'ha:light.kueche', 'ha:lock.haustuer',
+      'ha:media_player.lg', 'ha:sensor.temp', 'ha:switch.steckdose', 'ha:vacuum.dreame',
+    ]);
+    const get = (id) => devs.find((d) => d.id === `ha:${id}`);
+    const light = get('light.kueche');
     assert.deepEqual(light.capabilities, ['onoff', 'brightness', 'color']);
     assert.equal(light.state.brightness, 50);
     assert.equal(light.state.color, '#ff0000');
-    assert.equal(light.room, 'Küche');
-    assert.equal(devs.find((d) => d.id === 'ha:sensor.temp').state.value, 21.3);
-    const plug = devs.find((d) => d.id === 'ha:switch.steckdose');
+    assert.equal(light.room, 'Küche', 'Raum aus HA-Bereich');
+    assert.equal(get('sensor.temp').state.value, 21.3);
+    assert.equal(get('climate.wz').room, 'Home Assistant');
+    const plug = get('switch.steckdose');
     assert.equal(plug.type, 'plug');
     assert.equal(plug.online, false);
+    assert.deepEqual(get('lock.haustuer').capabilities, ['lock', 'lock_open']);
+    assert.deepEqual(get('vacuum.dreame').state, { status: 'docked', battery: 87 });
+    assert.deepEqual(get('alarm_control_panel.lupus').state, { alarm: 'armed_away', modes: ['home', 'away'], codeRequired: true, codeArmRequired: false });
+    assert.equal(get('media_player.lg').type, 'tv');
     assert.equal(srv.calls[0].headers.authorization, 'Bearer abc');
 
     await ha.execute('light.kueche', { action: 'set_brightness', value: 30 });
     await ha.execute('climate.wz', { action: 'set_target_temp', value: 21 });
-    const posts = srv.calls.filter((c) => c.method === 'POST');
-    assert.equal(posts[0].url, '/api/services/light/turn_on');
-    assert.deepEqual(posts[0].body, { entity_id: 'light.kueche', brightness_pct: 30 });
-    assert.equal(posts[1].url, '/api/services/climate/set_temperature');
-    assert.deepEqual(posts[1].body, { entity_id: 'climate.wz', temperature: 21 });
+    await ha.execute('lock.haustuer', { action: 'unlatch' });
+    await ha.execute('vacuum.dreame', { action: 'start' });
+    await ha.execute('vacuum.dreame', { action: 'pause' });
+    await ha.execute('alarm_control_panel.lupus', { action: 'disarm', value: '4711' });
+    await ha.execute('alarm_control_panel.lupus', { action: 'arm_home' });
+    const posts = srv.calls.filter((c) => c.method === 'POST' && c.url.startsWith('/api/services/'));
+    assert.deepEqual(posts.map((p) => [p.url.replace('/api/services/', ''), p.body]), [
+      ['light/turn_on', { entity_id: 'light.kueche', brightness_pct: 30 }],
+      ['climate/set_temperature', { entity_id: 'climate.wz', temperature: 21 }],
+      ['lock/open', { entity_id: 'lock.haustuer' }],
+      ['vacuum/start', { entity_id: 'vacuum.dreame' }],
+      ['vacuum/pause', { entity_id: 'vacuum.dreame' }],
+      ['alarm_control_panel/alarm_disarm', { entity_id: 'alarm_control_panel.lupus', code: '4711' }],
+      ['alarm_control_panel/alarm_arm_home', { entity_id: 'alarm_control_panel.lupus' }],
+    ]);
+
+    // sensors: "all" holt alle Sensoren
+    const all = await createAdapter({ type: 'homeassistant', url: `http://${srv.host}`, token: 'abc', sensors: 'all' }).discover();
+    assert.equal(all.filter((d) => d.type === 'sensor').length, 3);
   } finally {
     await srv.close();
   }

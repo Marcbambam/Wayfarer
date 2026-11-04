@@ -59,6 +59,9 @@
       </div>
       <div id="scan-results" aria-live="polite"></div>
 
+      <h3 id="hidden-head" hidden>Ausgeblendete Geräte</h3>
+      <div id="hidden-devices"></div>
+
       <h3>Zeitpläne</h3>
       <div id="automations" class="muted"></div>
       <p class="muted small">Räume, Namen, Szenen und Zeitpläne lassen sich zusätzlich in <code>config.json</code> anpassen.</p>
@@ -75,6 +78,31 @@
       <div class="row end">
         <button value="cancel" formnovalidate class="ghost">Abbrechen</button>
         <button value="save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-device">
+    <form id="form-device" method="dialog">
+      <h2 id="dev-title">Gerät</h2>
+      <label>Name <input name="name" maxlength="60" autocomplete="off"></label>
+      <label>Raum <input name="room" maxlength="60" list="room-list" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" name="hidden"> Im Dashboard ausblenden</label>
+      <p class="muted small">Leere Felder = Name und Raum wie vom Gerät bzw. aus Home Assistant. ID: <code id="dev-id"></code></p>
+      <div class="row end">
+        <button value="cancel" formnovalidate class="ghost">Abbrechen</button>
+        <button value="save">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-code">
+    <form id="form-code" method="dialog">
+      <h2 id="code-title">Code eingeben</h2>
+      <label>Code <input name="code" type="password" inputmode="numeric" autocomplete="off" required maxlength="32"></label>
+      <div class="row end">
+        <button value="cancel" formnovalidate class="ghost">Abbrechen</button>
+        <button value="ok">OK</button>
       </div>
     </form>
   </dialog>

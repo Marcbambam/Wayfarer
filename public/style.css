@@ -75,7 +75,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 .room { margin-bottom: 28px; }
 .room > h2 { margin: 0 0 12px; display: flex; gap: 8px; align-items: baseline; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 
 .card {
   background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
@@ -84,13 +84,16 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 }
 .card.on { background: var(--card-on); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .card.offline { opacity: .5; }
-.card-head { display: flex; align-items: center; gap: 10px; }
+.card-head { display: flex; align-items: center; gap: 8px; }
 .ico {
   width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center;
   font-size: 20px; background: var(--bg);
 }
 .card.on .ico { background: var(--accent); color: var(--accent-text); }
-.card-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-name {
+  font-weight: 600; overflow: hidden; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25;
+}
 .card-state { font-size: 13px; color: var(--muted); }
 .card-head .grow { flex: 1; min-width: 0; }
 
@@ -134,10 +137,11 @@ dialog input:not([type="checkbox"]) {
 
 #toast {
   position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(120%);
-  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; transition: transform .25s;
-  max-width: calc(100vw - 32px); pointer-events: none;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px;
+  max-width: calc(100vw - 32px); pointer-events: none; opacity: 0; visibility: hidden;
+  transition: transform .25s, opacity .25s, visibility .25s;
 }
-#toast.show { transform: translateX(-50%) translateY(0); }
+#toast.show { transform: translateX(-50%) translateY(0); opacity: 1; visibility: visible; }
 #toast.bad { background: var(--bad); color: #fff; }
 
 .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
@@ -167,3 +171,16 @@ dialog input:not([type="checkbox"]) {
 .banner[hidden] { display: none; }
 .banner .small { color: var(--muted); margin-top: 2px; }
 .banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.more {
+  background: transparent; color: var(--muted); padding: 0; width: 24px; height: 32px; flex: none;
+  font-size: 18px; line-height: 1; border-radius: 8px;
+}
+.more:hover { background: var(--bg); color: var(--text); }
+.card.alert { background: color-mix(in srgb, var(--bad) 14%, var(--card)); border-color: var(--bad); }
+.card.alert .ico { background: var(--bad); color: #fff; }
+.btns button[aria-pressed="true"] { cursor: default; }
+.btns button:disabled { opacity: .45; cursor: default; }
+.battery { height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; }
+.battery span { display: block; height: 100%; background: var(--ok); }
+dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }

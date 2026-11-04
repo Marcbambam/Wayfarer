@@ -6,7 +6,13 @@ import { makeDevice, rgbToHex, hexToRgb, HubError } from '../device.js';
 // (Zigbee, Z-Wave, Matter, Sonos, Tado, Nest, Fritz!DECT, …).
 //
 // config: { url: "http://homeassistant.local:8123", token: "<Long-Lived Token>",
-//           domains?: [...], exclude?: ["entity_id", ...], rooms?: { "light.x": "Küche" } }
+//           domains?: [...], exclude?: ["entity_id", ...], rooms?: { "light.x": "Küche" },
+//           sensors?: "auto" | "all" }
+//
+// Räume werden automatisch aus den Bereichen (Areas) in Home Assistant übernommen.
+// Sensoren: standardmäßig nur Temperatur, Luftfeuchte und Tür-/Fensterkontakte, die
+// einem Bereich zugeordnet sind – sonst wird das Dashboard mit Akku-, WLAN- und
+// Diagnose-Sensoren überflutet. Mit sensors: "all" kommen alle.
 const DOMAIN_TYPES = {
   light: 'light',
   switch: 'switch',
@@ -16,6 +22,8 @@ const DOMAIN_TYPES = {
   cover: 'cover',
   lock: 'lock',
   media_player: 'media',
+  vacuum: 'vacuum',
+  alarm_control_panel: 'alarm',
   sensor: 'sensor',
   binary_sensor: 'sensor',
 };
@@ -30,6 +38,32 @@ export class HomeAssistantAdapter extends Adapter {
     this.domains = new Set(config.domains ?? Object.keys(DOMAIN_TYPES));
     this.exclude = new Set(config.exclude ?? []);
     this.rooms = config.rooms ?? {};
+    this.sensorMode = config.sensors ?? 'auto';
+    this.areas = {};
+    this.areasFetched = 0;
+  }
+
+  // entity_id -> Bereichsname, über die Template-API (alle 60 s aktualisiert)
+  async loadAreas() {
+    if (Date.now() - this.areasFetched < 60_000) return;
+    this.areasFetched = Date.now();
+    const template = '{% set ns = namespace(out=[]) %}{% for s in states %}{% set a = area_name(s.entity_id) %}'
+      + '{% if a %}{% set ns.out = ns.out + [[s.entity_id, a]] %}{% endif %}{% endfor %}{{ ns.out | tojson }}';
+    try {
+      let pairs = await this.api('/template', { method: 'POST', body: { template } });
+      if (typeof pairs === 'string') pairs = JSON.parse(pairs);
+      this.areas = Object.fromEntries(pairs);
+    } catch {
+      // Ältere Versionen oder fehlende Rechte: dann eben ohne Bereiche
+    }
+  }
+
+  wantSensor(domain, ent) {
+    if (this.sensorMode === 'all' || this.config.domains) return true;
+    if (!this.areas[ent.entity_id]) return false;
+    const dc = ent.attributes?.device_class;
+    if (domain === 'sensor') return ['temperature', 'humidity'].includes(dc);
+    return ['door', 'window', 'opening', 'garage_door'].includes(dc);
   }
 
   api(path, opts = {}) {
@@ -40,11 +74,12 @@ export class HomeAssistantAdapter extends Adapter {
   }
 
   async discover() {
-    const states = await this.api('/states');
+    const [states] = await Promise.all([this.api('/states'), this.loadAreas()]);
     const out = [];
     for (const ent of states) {
       const [domain] = ent.entity_id.split('.');
       if (!this.domains.has(domain) || !DOMAIN_TYPES[domain] || this.exclude.has(ent.entity_id)) continue;
+      if ((domain === 'sensor' || domain === 'binary_sensor') && !this.wantSensor(domain, ent)) continue;
       out.push(this.toDevice(domain, ent));
     }
     return out;
@@ -85,8 +120,24 @@ export class HomeAssistantAdapter extends Adapter {
         break;
       case 'lock':
         caps.push('lock');
+        if ((a.supported_features ?? 0) & 1) caps.push('lock_open'); // LockEntityFeature.OPEN
         state.locked = ent.state === 'locked';
+        if (['jammed', 'locking', 'unlocking', 'open', 'opening'].includes(ent.state)) state.lockState = ent.state;
         break;
+      case 'vacuum':
+        caps.push('vacuum');
+        state.status = ent.state; // cleaning, docked, returning, paused, idle, error
+        if (a.battery_level != null) state.battery = a.battery_level;
+        break;
+      case 'alarm_control_panel': {
+        caps.push('alarm');
+        const f = a.supported_features ?? 0;
+        state.alarm = ent.state; // disarmed, armed_home, armed_away, armed_night, arming, pending, triggered
+        state.modes = [[1, 'home'], [2, 'away'], [4, 'night']].filter(([bit]) => f & bit).map(([, m]) => m);
+        state.codeRequired = a.code_format != null;
+        state.codeArmRequired = state.codeRequired && a.code_arm_required !== false;
+        break;
+      }
       case 'media_player':
         caps.push('onoff', 'media');
         state.on = ent.state !== 'off' && ent.state !== 'standby';
@@ -110,8 +161,10 @@ export class HomeAssistantAdapter extends Adapter {
       id: this.deviceId(ent.entity_id),
       adapter: this.id,
       name: a.friendly_name ?? ent.entity_id,
-      room: this.rooms[ent.entity_id] ?? this.config.defaultRoom ?? 'Home Assistant',
-      type: domain === 'switch' && a.device_class === 'outlet' ? 'plug' : DOMAIN_TYPES[domain],
+      room: this.rooms[ent.entity_id] ?? this.areas[ent.entity_id] ?? this.config.defaultRoom ?? 'Home Assistant',
+      type: (domain === 'switch' && a.device_class === 'outlet' && 'plug')
+        || (domain === 'media_player' && a.device_class === 'tv' && 'tv')
+        || DOMAIN_TYPES[domain],
       online: ent.state !== 'unavailable',
       capabilities: caps,
       state,
@@ -134,11 +187,20 @@ export class HomeAssistantAdapter extends Adapter {
       case 'set_position': return call('set_cover_position', { position: value });
       case 'open': return call('open_cover');
       case 'close': return call('close_cover');
-      case 'stop': return call('stop_cover');
+      case 'stop': return call(domain === 'vacuum' ? 'stop' : 'stop_cover');
       case 'lock': return call('lock');
       case 'unlock': return call('unlock');
+      case 'unlatch': return call('open');
       case 'play': return call('media_play');
-      case 'pause': return call('media_pause');
+      case 'pause': return call(domain === 'vacuum' ? 'pause' : 'media_pause');
+      case 'start': return call('start');
+      case 'return_to_base': return call('return_to_base');
+      case 'locate': return call('locate');
+      case 'arm_away':
+      case 'arm_home':
+      case 'arm_night':
+        return call(`alarm_${action}`, value ? { code: value } : {});
+      case 'disarm': return call('alarm_disarm', value ? { code: value } : {});
       case 'set_volume': return call('volume_set', { volume_level: value / 100 });
       default: throw new HubError(400, `Aktion ${action} nicht unterstützt`);
     }

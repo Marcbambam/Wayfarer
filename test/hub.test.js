@@ -96,3 +96,52 @@ test('Farbumrechnung xy <-> hex ist stabil', () => {
     assert.equal(back, hex);
   }
 });
+
+test('Sicherheit: Entriegeln/Öffnen/Unscharf nie als Gruppenbefehl', async () => {
+  const hub = await demoHub();
+  await assert.rejects(hub.commandMany({ room: 'Flur' }, { action: 'unlock' }), /einzelnes Gerät/);
+  await assert.rejects(hub.commandMany({}, { action: 'unlatch' }), /einzelnes Gerät/);
+  await assert.rejects(hub.commandMany({ type: 'alarm' }, { action: 'disarm', value: '1234' }), /einzelnes Gerät/);
+  // Einzeln geht es
+  await hub.command('demo:flur-tuer', { action: 'unlatch' });
+  assert.equal(hub.getDevice('demo:flur-tuer').state.locked, false);
+  // Szenen aus dem aktuellen Zustand entriegeln nie
+  const scene = await hub.captureScene('Test', ['demo:flur-tuer']);
+  assert.deepEqual(scene.actions, []);
+});
+
+test('Saugroboter und Alarmanlage', async () => {
+  const hub = await demoHub();
+  let d = await hub.command('demo:wz-sauger', { action: 'start' });
+  assert.equal(d.state.status, 'cleaning');
+  d = await hub.command('demo:wz-sauger', { action: 'pause' });
+  assert.equal(d.state.status, 'paused');
+  d = await hub.command('demo:flur-alarm', { action: 'arm_away' });
+  assert.equal(d.state.alarm, 'armed_away');
+  await assert.rejects(hub.command('demo:flur-alarm', { action: 'arm_night' }), /Modus/);
+  await assert.rejects(hub.command('demo:flur-alarm', { action: 'disarm', value: '0000' }), /Falscher Code/);
+  d = await hub.command('demo:flur-alarm', { action: 'disarm', value: '1234' });
+  assert.equal(d.state.alarm, 'disarmed');
+  // "pause" auf eine Gruppe trifft Sauger und Medien, aber nichts anderes
+  const res = await hub.commandMany({ room: 'Wohnzimmer' }, { action: 'pause' });
+  assert.deepEqual(res.map((r) => r.id).sort(), ['demo:wz-fernseher', 'demo:wz-sauger', 'demo:wz-tv']);
+});
+
+test('Geräte im Dashboard umbenennen, verschieben, ausblenden', async () => {
+  const hub = await demoHub();
+  let d = await hub.setDeviceSettings('demo:wz-stehlampe', { name: 'Leselampe', room: 'Büro' });
+  assert.equal(d.name, 'Leselampe');
+  assert.equal(d.room, 'Büro');
+  assert.equal(d.defaultName, 'Stehlampe');
+  await hub.refresh();
+  assert.equal(hub.getDevice('demo:wz-stehlampe').room, 'Büro', 'bleibt nach Aktualisierung');
+  await hub.setDeviceSettings('demo:wz-stehlampe', { hidden: true });
+  assert.ok(!hub.listDevices().some((x) => x.id === 'demo:wz-stehlampe'));
+  assert.ok(hub.listDevices({ includeHidden: true }).some((x) => x.id === 'demo:wz-stehlampe'));
+  d = await hub.setDeviceSettings('demo:wz-stehlampe', { name: '', room: '', hidden: false });
+  assert.equal(d.name, 'Stehlampe');
+  assert.equal(d.room, 'Wohnzimmer');
+  assert.equal(d.hidden, undefined);
+  assert.deepEqual(hub.deviceSettings, {});
+  await assert.rejects(hub.setDeviceSettings('demo:wz-stehlampe', { name: 42 }), /Ungültiger Name/);
+});

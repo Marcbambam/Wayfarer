@@ -4,8 +4,18 @@ let token = safeGet('smarthome-token');
 
 const ICONS = {
   light: '💡', switch: '🔌', plug: '🔌', fan: '🌀', thermostat: '🌡️', cover: '🪟',
-  lock: '🔒', media: '🔊', sensor: '📟',
+  lock: '🔒', media: '🔊', tv: '📺', vacuum: '🤖', alarm: '🛡️', sensor: '📟',
 };
+
+const VACUUM_STATUS = {
+  cleaning: 'Saugt', docked: 'In der Ladestation', returning: 'Fährt zur Station', paused: 'Pausiert',
+  idle: 'Bereit', error: 'Fehler – bitte prüfen',
+};
+const ALARM_STATUS = {
+  disarmed: 'Unscharf', armed_away: 'Scharf (abwesend)', armed_home: 'Scharf (zuhause)', armed_night: 'Scharf (Nacht)',
+  arming: 'Wird scharf geschaltet …', pending: 'Eingangsverzögerung …', triggered: 'ALARM!',
+};
+const ALARM_MODES = { away: 'Abwesend', home: 'Zuhause', night: 'Nacht' };
 
 // ---- API ----------------------------------------------------------------
 
@@ -64,7 +74,10 @@ function connect() {
 }
 
 function upsert(dev) {
-  if (dev.hidden) return;
+  if (dev.hidden) {
+    if (state.devices.delete(dev.id)) render();
+    return;
+  }
   state.devices.set(dev.id, dev);
   // Während man einen Regler zieht, nicht die Karte neu bauen
   const card = document.querySelector(`[data-id="${CSS.escape(dev.id)}"]`);
@@ -168,6 +181,8 @@ function renderSummary() {
 function isOn(d) {
   if (d.type === 'cover') return d.state.position > 0;
   if (d.type === 'lock') return d.state.locked === false;
+  if (d.type === 'vacuum') return ['cleaning', 'returning'].includes(d.state.status);
+  if (d.type === 'alarm') return d.state.alarm !== 'disarmed';
   return d.state.on === true;
 }
 
@@ -178,8 +193,14 @@ function describe(d) {
     case 'light': return s.on ? (s.brightness != null ? `An · ${s.brightness} %` : 'An') : 'Aus';
     case 'thermostat': return s.on ? `Heizt auf ${fmt(s.target)} °C` : 'Aus';
     case 'cover': return s.position === 0 ? 'Geschlossen' : s.position === 100 ? 'Offen' : `${s.position} % offen`;
-    case 'lock': return s.locked ? 'Verriegelt' : 'Entriegelt';
+    case 'lock':
+      if (s.lockState === 'jammed') return 'Blockiert!';
+      if (s.lockState === 'open' || s.lockState === 'opening') return 'Tür geöffnet';
+      return s.locked ? 'Verriegelt' : 'Entriegelt';
     case 'media': return !s.on ? 'Aus' : s.playing ? 'Spielt' : 'Pausiert';
+    case 'tv': return !s.on ? 'Aus' : s.playing ? 'Läuft' : 'An';
+    case 'vacuum': return `${VACUUM_STATUS[s.status] ?? s.status ?? '–'}${s.battery != null ? ` · Akku ${s.battery} %` : ''}`;
+    case 'alarm': return ALARM_STATUS[s.alarm] ?? s.alarm ?? '–';
     case 'sensor': return 'Sensor';
     default: return s.on == null ? '–' : s.on ? 'An' : 'Aus';
   }
@@ -188,12 +209,17 @@ function describe(d) {
 function deviceCard(d) {
   const s = d.state;
   const caps = new Set(d.capabilities);
-  const card = el('article', { class: `card${isOn(d) ? ' on' : ''}${d.online ? '' : ' offline'}`, 'data-id': d.id });
+  const alert = (d.type === 'alarm' && s.alarm === 'triggered') || s.lockState === 'jammed' || (d.type === 'vacuum' && s.status === 'error');
+  const card = el('article', { class: `card${isOn(d) ? ' on' : ''}${alert ? ' alert' : ''}${d.online ? '' : ' offline'}`, 'data-id': d.id });
   const ico = el('div', { class: 'ico' }, d.type === 'lock' && s.locked === false ? '🔓' : ICONS[d.type] ?? '•');
   if (d.type === 'light' && s.on && s.color) ico.style.background = s.color;
 
   const head = el('div', { class: 'card-head' }, ico,
     el('div', { class: 'grow' }, el('div', { class: 'card-name', title: d.name }, d.name), el('div', { class: 'card-state' }, describe(d))));
+
+  const more = el('button', { type: 'button', class: 'more', title: 'Einstellungen', 'aria-label': `${d.name}: Einstellungen` }, '⋯');
+  more.onclick = () => openDeviceDialog(d);
+  head.append(more);
 
   if (caps.has('onoff') && d.type !== 'thermostat') {
     const sw = el('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s.on), 'aria-label': `${d.name} schalten` });
@@ -236,15 +262,60 @@ function deviceCard(d) {
     card.append(btns);
   }
   if (caps.has('lock')) {
-    const b = el('button', { class: s.locked ? 'ghost' : '' }, s.locked ? 'Entriegeln' : 'Verriegeln');
+    const b = el('button', { class: s.locked ? 'ghost small' : 'small' }, s.locked ? 'Entriegeln' : 'Verriegeln');
     b.onclick = () => {
       if (s.locked && !confirm(`${d.name} wirklich entriegeln?`)) return;
       command(d.id, s.locked ? 'unlock' : 'lock');
     };
-    card.append(b);
+    const btns = el('div', { class: 'btns' }, b);
+    if (caps.has('lock_open')) {
+      const o = el('button', { class: 'ghost small' }, '🚪 Tür öffnen');
+      o.onclick = () => { if (confirm(`${d.name} jetzt öffnen?`)) command(d.id, 'unlatch'); };
+      btns.append(o);
+    }
+    card.append(btns);
   }
-  if (caps.has('media')) {
-    const b = el('button', { class: 'ghost small' }, s.playing ? '⏸ Pause' : '▶ Abspielen');
+  if (caps.has('vacuum')) {
+    const cleaning = s.status === 'cleaning';
+    const main = el('button', { class: 'small' }, cleaning ? 'Pause' : '▶ Saugen');
+    main.onclick = () => command(d.id, cleaning ? 'pause' : 'start');
+    const home = el('button', { class: 'ghost small' }, '🏠 Zur Station');
+    home.onclick = () => command(d.id, 'return_to_base');
+    if (s.status === 'docked') home.disabled = true;
+    card.append(el('div', { class: 'btns' }, main, home));
+    if (s.battery != null) {
+      card.append(el('div', { class: 'battery', role: 'meter', 'aria-valuenow': s.battery, 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-label': 'Akku' },
+        el('span', { style: `width:${Math.max(0, Math.min(100, s.battery))}%` })));
+    }
+  }
+  if (caps.has('alarm')) {
+    const btns = el('div', { class: 'btns' });
+    for (const m of s.modes ?? ['away']) {
+      const active = s.alarm === `armed_${m}`;
+      const b = el('button', { class: active ? 'small' : 'ghost small', 'aria-pressed': String(active) }, ALARM_MODES[m] ?? m);
+      b.onclick = async () => {
+        if (active) return;
+        const code = s.codeArmRequired ? await askCode(`${d.name}: ${ALARM_MODES[m] ?? m}`) : undefined;
+        if (code === null) return;
+        command(d.id, `arm_${m}`, code);
+      };
+      btns.append(b);
+    }
+    const off = el('button', { class: s.alarm === 'disarmed' ? 'small' : 'ghost small', 'aria-pressed': String(s.alarm === 'disarmed') }, 'Unscharf');
+    off.onclick = async () => {
+      if (s.alarm === 'disarmed') return;
+      let code;
+      if (s.codeRequired) {
+        code = await askCode(`${d.name} unscharf schalten`);
+        if (code === null) return;
+      } else if (!confirm(`${d.name} wirklich unscharf schalten?`)) return;
+      command(d.id, 'disarm', code);
+    };
+    btns.append(off);
+    card.append(btns);
+  }
+  if (caps.has('media') && (d.type !== 'tv' || s.on)) {
+    const b = el('button', { class: 'ghost small' }, s.playing ? 'Pause' : '▶ Abspielen');
     b.onclick = () => command(d.id, s.playing ? 'pause' : 'play');
     card.append(el('div', { class: 'btns' }, b));
     card.append(slider('Lautstärke', s.volume ?? 0, '%', (v) => command(d.id, 'set_volume', v)));
@@ -288,6 +359,7 @@ function openSettings() {
   for (const a of state.automations) {
     auto.append(el('div', { class: 'small' }, `${a.at} · ${a.days ? a.days.map((x) => days[x]).join(', ') : 'täglich'} · ${a.name ?? a.scene ?? ''}${a.enabled === false ? ' (aus)' : ''}`));
   }
+  renderHidden();
   if (!$('#dlg-settings').open) $('#dlg-settings').showModal();
 }
 
@@ -325,7 +397,7 @@ async function runScan() {
 function foundCard(f) {
   const card = el('div', { class: 'found' });
   card.append(el('div', { class: 'found-head' },
-    el('strong', {}, f.name),
+    el('strong', {}, f.elements.name),
     el('span', { class: 'muted small' }, `${TYPE_LABEL[f.type]} · ${f.host}${f.model ? ` · ${f.model}` : ''}`)));
 
   if (f.configured) {
@@ -478,3 +550,65 @@ $('#dlg-settings').addEventListener('keydown', (e) => {
   e.preventDefault();
   if (e.target.id === 'scan-subnet') runScan();
 });
+
+
+// ---- Geräte-Einstellungen ----------------------------------------------
+
+function openDeviceDialog(d) {
+  const f = $('#form-device');
+  f.reset();
+  f.dataset.deviceId = d.id;
+  $('#dev-title').textContent = d.name;
+  f.elements.name.value = d.name === d.defaultName ? '' : d.name;
+  f.elements.name.placeholder = d.defaultName ?? d.name;
+  f.elements.room.value = d.room === d.defaultRoom ? '' : d.room;
+  f.elements.room.placeholder = d.defaultRoom ?? d.room;
+  f.elements.hidden.checked = false;
+  $('#dev-id').textContent = d.id;
+  ensureRoomList();
+  $('#dlg-device').showModal();
+}
+
+$('#dlg-device').addEventListener('close', async () => {
+  if ($('#dlg-device').returnValue !== 'save') return;
+  const f = $('#form-device');
+  try {
+    await api(`/devices/${encodeURIComponent(f.dataset.deviceId)}`, {
+      method: 'PATCH',
+      body: { name: f.elements.name.value, room: f.elements.room.value, hidden: f.elements.hidden.checked },
+    });
+    toast(f.elements.hidden.checked ? 'Ausgeblendet – unter ⚙︎ wieder einblendbar' : 'Gespeichert');
+  } catch (err) { toast(err.message, true); }
+});
+
+async function renderHidden() {
+  const box = $('#hidden-devices');
+  box.textContent = '';
+  let all;
+  try { all = await api('/devices?all'); } catch { return; }
+  const hidden = all.filter((d) => d.hidden);
+  $('#hidden-head').hidden = !hidden.length;
+  for (const d of hidden) {
+    const b = el('button', { type: 'button', class: 'ghost small' }, 'Einblenden');
+    b.onclick = async () => {
+      try {
+        await api(`/devices/${encodeURIComponent(d.id)}`, { method: 'PATCH', body: { hidden: false } });
+        renderHidden();
+      } catch (err) { toast(err.message, true); }
+    };
+    box.append(el('div', { class: 'integ' }, el('div', {}, d.name, el('div', { class: 'muted small' }, d.room)), b));
+  }
+}
+
+// ---- Code-Eingabe (Alarmanlage) ----------------------------------------
+
+function askCode(title) {
+  return new Promise((resolve) => {
+    const dlg = $('#dlg-code');
+    const f = $('#form-code');
+    f.reset();
+    $('#code-title').textContent = title;
+    dlg.onclose = () => resolve(dlg.returnValue === 'ok' ? f.elements.code.value.trim() : null);
+    dlg.showModal();
+  });
+}

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createAdapter } from './adapters/index.js';
-import { validateCommand, HubError, COMMANDS } from './device.js';
+import { validateCommand, HubError, supports, SENSITIVE_ACTIONS } from './device.js';
 
 // Die Zentrale: hält alle Integrationen, den aktuellen Gerätezustand,
 // Szenen und Zeitpläne. Meldet Änderungen per 'change'-Event.
@@ -17,6 +17,7 @@ export class Hub extends EventEmitter {
     this.errors = new Map(); // adapterId -> letzte Fehlermeldung
     this.scenes = [...(config.scenes ?? [])].map((s) => ({ ...s, builtin: true }));
     this.automations = config.automations ?? [];
+    this.deviceSettings = {}; // im Dashboard geänderte Namen/Räume/ausgeblendet (data/user.json)
     this.timers = [];
     this.lastAutomationMinute = null;
 
@@ -98,14 +99,43 @@ export class Hub extends EventEmitter {
     }));
   }
 
-  // Name/Raum aus der Konfiguration überschreiben: "devices": { "hue:3": { "name": "…", "room": "…", "hidden": true } }
+  // Name/Raum überschreiben – aus config.json ("devices": { "hue:3": { "name": "…", "room": "…", "hidden": true } })
+  // und aus den Einstellungen, die im Dashboard gemacht wurden (haben Vorrang).
   applyOverrides(dev) {
-    const o = this.config.devices?.[dev.id];
-    if (!o) return;
-    if (o.name) dev.name = o.name;
-    if (o.room) dev.room = o.room;
-    if (o.type) dev.type = o.type;
-    if (o.hidden) dev.hidden = true;
+    dev.defaultName = dev.name;
+    dev.defaultRoom = dev.room;
+    for (const o of [this.config.devices?.[dev.id], this.deviceSettings[dev.id]]) {
+      if (!o) continue;
+      if (o.name) dev.name = o.name;
+      if (o.room) dev.room = o.room;
+      if (o.type) dev.type = o.type;
+      if (o.hidden !== undefined) dev.hidden = Boolean(o.hidden);
+    }
+    if (!dev.hidden) delete dev.hidden;
+  }
+
+  // Im Dashboard: umbenennen, Raum ändern, aus-/einblenden. Leere Werte = Standard.
+  async setDeviceSettings(id, { name, room, hidden } = {}) {
+    const dev = this.getDevice(id);
+    const check = (v, what) => {
+      if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > 60)) throw new HubError(400, `Ungültiger ${what}`);
+      return v?.trim() || undefined;
+    };
+    const entry = { ...(this.deviceSettings[id] ?? {}) };
+    if (name !== undefined) entry.name = check(name, 'Name');
+    if (room !== undefined) entry.room = check(room, 'Raum');
+    if (hidden !== undefined) entry.hidden = Boolean(hidden);
+    for (const k of Object.keys(entry)) if (entry[k] === undefined || entry[k] === false) delete entry[k];
+    if (Object.keys(entry).length) this.deviceSettings[id] = entry;
+    else delete this.deviceSettings[id];
+    await this.saveUserData();
+
+    const updated = { ...structuredClone(dev), name: dev.defaultName, room: dev.defaultRoom };
+    delete updated.hidden;
+    this.applyOverrides(updated);
+    this.devices.set(id, updated);
+    this.emit('change', updated);
+    return updated;
   }
 
   listDevices({ includeHidden = false } = {}) {
@@ -135,11 +165,14 @@ export class Hub extends EventEmitter {
 
   // Mehrere Geräte auf einmal, z. B. "alle Lichter im Wohnzimmer aus"
   async commandMany({ room, type, ids }, command) {
+    if (SENSITIVE_ACTIONS.has(command.action)) {
+      throw new HubError(400, `"${command.action}" ist aus Sicherheitsgründen nur für ein einzelnes Gerät erlaubt`);
+    }
     const targets = this.listDevices({ includeHidden: true }).filter((d) =>
       (!ids || ids.includes(d.id))
       && (!room || d.room === room)
       && (!type || d.type === type)
-      && d.capabilities.includes(COMMANDS[command.action]));
+      && supports(d, command.action));
     const results = await Promise.allSettled(targets.map((d) => this.command(d.id, command)));
     return targets.map((d, i) => ({
       id: d.id,
@@ -211,7 +244,11 @@ export class Hub extends EventEmitter {
       if (d.capabilities.includes('color') && s.color) actions.push({ device: id, action: 'set_color', value: s.color });
       if (d.capabilities.includes('target_temp') && s.target != null) actions.push({ device: id, action: 'set_target_temp', value: s.target });
       if (d.capabilities.includes('position') && s.position != null) actions.push({ device: id, action: 'set_position', value: s.position });
-      if (d.capabilities.includes('lock') && s.locked != null) actions.push({ device: id, action: s.locked ? 'lock' : 'unlock' });
+      // Schlösser nur verriegeln, nie automatisch entriegeln; Alarmanlage nur scharf schalten
+      if (d.capabilities.includes('lock') && s.locked) actions.push({ device: id, action: 'lock' });
+      if (d.capabilities.includes('alarm') && s.alarm?.startsWith('armed_') && !s.codeArmRequired) {
+        actions.push({ device: id, action: s.alarm.replace('armed_', 'arm_') });
+      }
     }
     return this.saveScene({ name, actions });
   }
@@ -265,6 +302,7 @@ export class Hub extends EventEmitter {
       for (const s of data.scenes ?? []) {
         if (!this.scenes.some((x) => x.id === s.id)) this.scenes.push(s);
       }
+      this.deviceSettings = data.devices ?? {};
     } catch (err) {
       if (err.code !== 'ENOENT') this.log.warn?.(`Konnte ${this.dataFile} nicht lesen: ${err.message}`);
     }
@@ -274,7 +312,7 @@ export class Hub extends EventEmitter {
     if (!this.dataFile) return;
     await mkdir(dirname(this.dataFile), { recursive: true });
     const scenes = this.scenes.filter((s) => !s.builtin);
-    await writeFile(this.dataFile, JSON.stringify({ scenes }, null, 2));
+    await writeFile(this.dataFile, JSON.stringify({ scenes, devices: this.deviceSettings }, null, 2));
   }
 }
 

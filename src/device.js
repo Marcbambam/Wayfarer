@@ -9,35 +9,54 @@
 //   online:       boolean
 //   capabilities: Teilmenge von CAPABILITIES
 //   state:        { on, brightness (0-100), color ("#rrggbb"), temperature,
-//                   target, position (0-100), locked, value, unit, playing, volume }
+//                   target, position (0-100), locked, value, unit, playing, volume,
+//                   status + battery (Sauger), alarm + modes + codeRequired (Alarmanlage) }
 // }
 
 export const DEVICE_TYPES = [
-  'light', 'switch', 'plug', 'fan', 'thermostat', 'cover', 'lock', 'media', 'sensor',
+  'light', 'switch', 'plug', 'fan', 'thermostat', 'cover', 'lock', 'media', 'tv',
+  'vacuum', 'alarm', 'sensor',
 ];
 
 export const CAPABILITIES = [
-  'onoff', 'brightness', 'color', 'target_temp', 'position', 'lock', 'media', 'read',
+  'onoff', 'brightness', 'color', 'target_temp', 'position', 'lock', 'lock_open',
+  'media', 'vacuum', 'alarm', 'read',
 ];
 
-// Welche Befehle welche Fähigkeit voraussetzen.
+// Welche Befehle welche Fähigkeit voraussetzen (eine der genannten reicht).
 export const COMMANDS = {
-  turn_on: 'onoff',
-  turn_off: 'onoff',
-  toggle: 'onoff',
-  set_brightness: 'brightness',
-  set_color: 'color',
-  set_target_temp: 'target_temp',
-  set_position: 'position',
-  open: 'position',
-  close: 'position',
-  stop: 'position',
-  lock: 'lock',
-  unlock: 'lock',
-  play: 'media',
-  pause: 'media',
-  set_volume: 'media',
+  turn_on: ['onoff'],
+  turn_off: ['onoff'],
+  toggle: ['onoff'],
+  set_brightness: ['brightness'],
+  set_color: ['color'],
+  set_target_temp: ['target_temp'],
+  set_position: ['position'],
+  open: ['position'],
+  close: ['position'],
+  stop: ['position', 'vacuum'],
+  lock: ['lock'],
+  unlock: ['lock'],
+  unlatch: ['lock_open'], // Tür öffnen (Falle ziehen)
+  play: ['media'],
+  pause: ['media', 'vacuum'],
+  set_volume: ['media'],
+  start: ['vacuum'],
+  return_to_base: ['vacuum'],
+  locate: ['vacuum'],
+  arm_away: ['alarm'],
+  arm_home: ['alarm'],
+  arm_night: ['alarm'],
+  disarm: ['alarm'],
 };
+
+// Sicherheitskritisch: nie als Gruppenbefehl (z. B. "alles im Flur"), nur für ein
+// ausdrücklich genanntes Gerät.
+export const SENSITIVE_ACTIONS = new Set(['unlock', 'unlatch', 'disarm']);
+
+export function supports(device, action) {
+  return (COMMANDS[action] ?? []).some((cap) => device.capabilities.includes(cap));
+}
 
 export function makeDevice(fields) {
   return {
@@ -53,10 +72,12 @@ export function validateCommand(device, command) {
   if (!command || typeof command.action !== 'string') {
     throw new HubError(400, 'Befehl braucht ein "action"-Feld');
   }
-  const cap = COMMANDS[command.action];
-  if (!cap) throw new HubError(400, `Unbekannte Aktion: ${command.action}`);
-  if (!device.capabilities.includes(cap)) {
+  if (!COMMANDS[command.action]) throw new HubError(400, `Unbekannte Aktion: ${command.action}`);
+  if (!supports(device, command.action)) {
     throw new HubError(400, `${device.name} unterstützt "${command.action}" nicht`);
+  }
+  if (command.action.startsWith('arm_') && device.state?.modes && !device.state.modes.includes(command.action.slice(4))) {
+    throw new HubError(400, `${device.name} kennt den Modus "${command.action.slice(4)}" nicht`);
   }
   const v = command.value;
   switch (command.action) {
@@ -75,6 +96,14 @@ export function validateCommand(device, command) {
     case 'set_color':
       if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) {
         throw new HubError(400, 'Farbe muss im Format #rrggbb angegeben werden');
+      }
+      break;
+    case 'arm_away':
+    case 'arm_home':
+    case 'arm_night':
+    case 'disarm':
+      if (v !== undefined && (typeof v !== 'string' || !/^[\w-]{1,32}$/.test(v))) {
+        throw new HubError(400, 'Ungültiger Code');
       }
       break;
     default:
