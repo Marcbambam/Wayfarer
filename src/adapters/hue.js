@@ -78,8 +78,22 @@ export async function pairHueBridge(bridge) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ devicetype: 'wayfarer#smarthome' }),
+    signal: AbortSignal.timeout(5000),
   });
   const [r] = await res.json();
   if (r.error) throw new Error(r.error.description);
   return r.success.username;
+}
+
+// Wiederholt die Kopplung, bis die Link-Taste gedrückt wurde.
+export async function pairHueBridgeWithRetry(bridge, { attempts = 15, interval = 2000 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await pairHueBridge(bridge);
+    } catch (err) {
+      if (!/link button/i.test(err.message)) throw err;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, interval));
+    }
+  }
+  throw new Error('Link-Taste auf der Hue Bridge wurde nicht rechtzeitig gedrückt');
 }

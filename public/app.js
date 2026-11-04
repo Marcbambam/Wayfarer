@@ -84,7 +84,9 @@ function render() {
   main.textContent = '';
   const devices = [...state.devices.values()].filter((d) => state.room === 'Alle' || d.room === state.room);
   if (!devices.length) {
-    main.innerHTML = '<div class="empty">Keine Geräte gefunden. Richte Integrationen in <code>config.json</code> ein.</div>';
+    const scan = el('button', { type: 'button' }, 'Netzwerk durchsuchen');
+    scan.onclick = () => { openSettings(); runScan(); };
+    main.append(el('div', { class: 'empty' }, el('p', {}, 'Noch keine Geräte eingerichtet.'), scan));
     return;
   }
   const byRoom = groupBy(devices, (d) => d.room);
@@ -257,7 +259,9 @@ $('#btn-all-off').onclick = async () => {
   } catch (err) { toast(err.message, true); }
 };
 
-$('#btn-settings').onclick = () => {
+$('#btn-settings').onclick = () => openSettings();
+
+function openSettings() {
   const box = $('#integrations');
   box.textContent = '';
   for (const i of state.integrations) {
@@ -271,8 +275,127 @@ $('#btn-settings').onclick = () => {
   for (const a of state.automations) {
     auto.append(el('div', { class: 'small' }, `${a.at} · ${a.days ? a.days.map((x) => days[x]).join(', ') : 'täglich'} · ${a.name ?? a.scene ?? ''}${a.enabled === false ? ' (aus)' : ''}`));
   }
-  $('#dlg-settings').showModal();
-};
+  if (!$('#dlg-settings').open) $('#dlg-settings').showModal();
+}
+
+// ---- Gerätesuche --------------------------------------------------------
+
+const TYPE_LABEL = { homeassistant: 'Home Assistant', hue: 'Philips Hue', shelly: 'Shelly', tasmota: 'Tasmota' };
+
+$('#btn-scan').onclick = () => runScan();
+
+async function runScan() {
+  const btn = $('#btn-scan');
+  const box = $('#scan-results');
+  btn.disabled = true;
+  btn.textContent = 'Suche läuft …';
+  box.textContent = '';
+  box.append(el('p', { class: 'muted small' }, 'Das dauert etwa 10–30 Sekunden.'));
+  try {
+    const subnet = $('#scan-subnet').value.trim();
+    const r = await api('/discover', { method: 'POST', body: subnet ? { subnet } : {} });
+    box.textContent = '';
+    box.append(el('p', { class: 'muted small' }, `${r.scanned} Adressen in ${r.subnets.join(', ')} durchsucht.`));
+    if (!r.results.length) {
+      box.append(el('p', { class: 'small' }, 'Keine bekannten Geräte gefunden. Läuft die Zentrale im selben Netz wie die Geräte? '
+        + 'In Docker bitte mit „network_mode: host“ starten oder oben das Subnetz angeben.'));
+    }
+    for (const f of r.results) box.append(foundCard(f));
+  } catch (err) {
+    box.textContent = '';
+    box.append(el('p', { class: 'warn small' }, err.message));
+  }
+  btn.disabled = false;
+  btn.textContent = 'Erneut suchen';
+}
+
+function foundCard(f) {
+  const card = el('div', { class: 'found' });
+  card.append(el('div', { class: 'found-head' },
+    el('strong', {}, f.name),
+    el('span', { class: 'muted small' }, `${TYPE_LABEL[f.type]} · ${f.host}${f.model ? ` · ${f.model}` : ''}`)));
+
+  if (f.configured) {
+    card.append(el('span', { class: 'ok' }, '✓ Bereits eingerichtet'));
+    return card;
+  }
+  if (f.needsAuth) {
+    card.append(el('span', { class: 'warn' }, 'Passwortgeschützt – bitte Gerät mit Passwort in config.json eintragen oder den Schutz am Gerät abschalten.'));
+    return card;
+  }
+
+  const done = (msg) => { card.replaceChildren(card.firstChild, el('span', { class: 'ok' }, msg)); };
+
+  if (f.type === 'hue') {
+    card.append(el('p', { class: 'small' }, 'Drück die runde Link-Taste oben auf der Bridge und klick danach innerhalb von 30 Sekunden auf „Verbinden“.'));
+    const b = el('button', { type: 'button' }, 'Verbinden');
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Warte auf Link-Taste …';
+      try {
+        await api('/setup/hue', { method: 'POST', body: { host: f.host } });
+        done('✓ Verbunden – Lampen erscheinen gleich im Dashboard');
+      } catch (err) { toast(err.message, true); b.disabled = false; b.textContent = 'Verbinden'; }
+    };
+    card.append(b);
+    return card;
+  }
+
+  if (f.type === 'homeassistant') {
+    card.append(el('p', { class: 'small' }, 'In Home Assistant: Profil → Sicherheit → „Langlebige Zugriffstoken“ → Token erstellen und hier einfügen.'));
+    const input = el('input', { type: 'password', placeholder: 'Zugriffstoken', autocomplete: 'off', 'aria-label': 'Zugriffstoken' });
+    const b = el('button', { type: 'button' }, 'Verbinden');
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api('/setup/homeassistant', { method: 'POST', body: { url: f.url, token: input.value.trim() } });
+        done('✓ Verbunden – alle Home-Assistant-Geräte erscheinen gleich im Dashboard');
+      } catch (err) { toast(err.message, true); b.disabled = false; }
+    };
+    card.append(input, b);
+    return card;
+  }
+
+  // Shelly / Tasmota: einzelne Kanäle auswählen, benennen, Raum zuweisen
+  const rows = [];
+  for (const d of f.devices) {
+    if (d.configured) {
+      card.append(el('div', { class: 'ok' }, `✓ ${d.name} ist bereits eingerichtet`));
+      continue;
+    }
+    const cb = el('input', { type: 'checkbox', 'aria-label': 'Übernehmen' });
+    cb.checked = true;
+    const name = el('input', { type: 'text', value: d.name, 'aria-label': 'Name' });
+    const room = el('input', { type: 'text', class: 'room-in', placeholder: 'Raum', list: 'room-list', 'aria-label': 'Raum' });
+    rows.push({ d, cb, name, room });
+    card.append(el('div', { class: 'found-dev' }, cb, name, room));
+  }
+  if (!rows.length) return card;
+  const b = el('button', { type: 'button' }, 'Hinzufügen');
+  b.onclick = async () => {
+    const devices = rows.filter((r) => r.cb.checked).map(({ d, name, room }) => {
+      const { configured, ...rest } = d;
+      return { ...rest, name: name.value.trim() || d.name, room: room.value.trim() || undefined };
+    });
+    if (!devices.length) return toast('Nichts ausgewählt', true);
+    b.disabled = true;
+    try {
+      const r = await api('/setup/devices', { method: 'POST', body: { type: f.type, devices } });
+      done(`✓ ${r.added.length} Gerät${r.added.length === 1 ? '' : 'e'} hinzugefügt`);
+    } catch (err) { toast(err.message, true); b.disabled = false; }
+  };
+  card.append(b);
+  ensureRoomList();
+  return card;
+}
+
+function ensureRoomList() {
+  let list = $('#room-list');
+  if (!list) { list = el('datalist', { id: 'room-list' }); document.body.append(list); }
+  list.textContent = '';
+  const rooms = new Set([...state.devices.values()].map((d) => d.room));
+  ['Wohnzimmer', 'Küche', 'Schlafzimmer', 'Bad', 'Flur', 'Büro', 'Kinderzimmer', 'Garten'].forEach((r) => rooms.add(r));
+  for (const r of rooms) list.append(el('option', { value: r }));
+}
 
 $('#btn-new-scene').onclick = () => {
   const box = $('#scene-devices');
@@ -335,3 +458,10 @@ function safeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* egal */ 
 
 state.room = safeGet('smarthome-room') ?? 'Alle';
 connect();
+
+// Enter in Eingabefeldern des Einstellungsdialogs soll ihn nicht schließen
+$('#dlg-settings').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (e.target.id === 'scan-subnet') runScan();
+});

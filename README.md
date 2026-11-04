@@ -15,7 +15,33 @@ node server.js          # startet im Demo-Modus mit simulierten Geräten
 # → http://localhost:8080
 ```
 
-Für deine echten Geräte:
+## Geräte automatisch finden
+
+Öffne das Dashboard, klick auf **⚙︎ → „Netzwerk durchsuchen“**. Die Zentrale fragt jede Adresse im Heimnetz kurz an und zeigt, was sie erkennt:
+
+| Gerät | Erkennung | Übernehmen |
+|---|---|---|
+| **Shelly** (Gen1–Gen4) | automatisch inkl. Kanälen, Dimmern und Rollladen-Modus | Name und Raum eingeben → „Hinzufügen“ |
+| **Tasmota** | automatisch inkl. Dimmer, Farbe und Mehrfachsteckdosen | Name und Raum eingeben → „Hinzufügen“ |
+| **Philips Hue Bridge** | automatisch | Link-Taste an der Bridge drücken → „Verbinden“ |
+| **Home Assistant** | automatisch (Port 8123) | Zugriffstoken einfügen → „Verbinden“ |
+
+Gefundene Geräte werden in `config.json` gespeichert und erscheinen sofort, ohne Neustart. Beim ersten echten Gerät verschwinden die Demo-Geräte.
+
+Das geht auch im Terminal:
+
+```bash
+npm run scan                    # eigenes Netz durchsuchen
+npm run scan -- 192.168.1.0/24  # bestimmtes Subnetz
+```
+
+**Nicht direkt auffindbar** sind Geräte, die nur über die Cloud ihres Herstellers laufen (Alexa, Google Home, Tuya/Smart Life, viele Thermostate und Saugroboter) und Zigbee-/Z-Wave-Geräte ohne eigene IP-Adresse. Diese bindest du über **Home Assistant** ein: Dort einmal die Hersteller verbinden, dann erscheinen sie alle hier.
+
+Läuft die Zentrale in Docker, starte sie mit `network_mode: host`, sonst sieht sie das Heimnetz nicht. Alternativ gibst du das Subnetz im Suchfeld an oder trägst `"scanSubnets": ["192.168.1.0/24"]` in `config.json` ein.
+
+## Manuell einrichten
+
+Alles lässt sich auch direkt in `config.json` eintragen:
 
 ```bash
 cp config.example.json config.json
@@ -113,6 +139,8 @@ Alle Endpunkte verlangen `Authorization: Bearer <token>`, wenn ein Token gesetzt
 | GET / POST | `/api/scenes` | Szenen auflisten / anlegen (`{ name, actions }` oder `{ name, capture: [ids] }`) |
 | POST | `/api/scenes/:id/run` | Szene ausführen |
 | DELETE | `/api/scenes/:id` | Selbst angelegte Szene löschen |
+| POST | `/api/discover` | Netzwerk durchsuchen (`{ "subnet": "192.168.1.0/24" }` optional) |
+| POST | `/api/setup/devices` · `/api/setup/hue` · `/api/setup/homeassistant` | Gefundene Geräte übernehmen |
 | GET | `/api/status` | Zustand der Integrationen und Zeitpläne |
 | GET | `/api/events` | Live-Stream (Server-Sent Events) |
 

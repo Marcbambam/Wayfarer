@@ -13,7 +13,6 @@ export class Hub extends EventEmitter {
     this.log = log;
     this.dataFile = dataFile;
     this.pollInterval = (config.pollInterval ?? 5) * 1000;
-    this.adapters = new Map();
     this.devices = new Map();
     this.errors = new Map(); // adapterId -> letzte Fehlermeldung
     this.scenes = [...(config.scenes ?? [])].map((s) => ({ ...s, builtin: true }));
@@ -21,14 +20,25 @@ export class Hub extends EventEmitter {
     this.timers = [];
     this.lastAutomationMinute = null;
 
-    for (const integ of config.integrations ?? [{ type: 'demo' }]) {
-      if (integ.enabled === false) continue;
-      const adapter = createAdapter(integ);
-      if (this.adapters.has(adapter.id)) {
-        throw new Error(`Integration-ID "${adapter.id}" ist doppelt – bitte eindeutige "id" vergeben`);
+    this.adapters = buildAdapters(config.integrations ?? [{ type: 'demo' }]);
+  }
+
+  // Integrationen im laufenden Betrieb austauschen (z. B. nach der Gerätesuche).
+  async reloadIntegrations(newConfig) {
+    const adapters = buildAdapters(newConfig.integrations ?? []); // wirft bei Fehlern, alter Zustand bleibt
+    const old = this.adapters;
+    this.adapters = adapters;
+    this.config = newConfig;
+    await Promise.all([...old.values()].map((a) => a.stop()));
+    for (const [id, dev] of this.devices) {
+      if (!adapters.has(dev.adapter)) {
+        this.devices.delete(id);
+        this.emit('remove', id);
       }
-      this.adapters.set(adapter.id, adapter);
     }
+    for (const id of this.errors.keys()) if (!adapters.has(id)) this.errors.delete(id);
+    await this.refresh();
+    this.emit('status');
   }
 
   async start() {
@@ -272,4 +282,17 @@ function slug(s) {
   return s.toLowerCase()
     .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `szene-${Date.now()}`;
+}
+
+function buildAdapters(integrations) {
+  const map = new Map();
+  for (const integ of integrations) {
+    if (integ.enabled === false) continue;
+    const adapter = createAdapter(integ);
+    if (map.has(adapter.id)) {
+      throw new Error(`Integration-ID "${adapter.id}" ist doppelt – bitte eindeutige "id" vergeben`);
+    }
+    map.set(adapter.id, adapter);
+  }
+  return map;
 }

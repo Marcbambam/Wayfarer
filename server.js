@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import { Hub } from './src/hub.js';
 import { HubError } from './src/device.js';
-import { pairHueBridge } from './src/adapters/hue.js';
+import { pairHueBridgeWithRetry } from './src/adapters/hue.js';
+import { scanNetwork, markConfigured } from './src/discovery.js';
+import { Setup } from './src/setup.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -28,7 +30,8 @@ export async function loadConfig(path) {
   return JSON.parse(await readFile(path, 'utf8'));
 }
 
-export function createApp(hub, { token = null } = {}) {
+export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanOptions = {} } = {}) {
+  let scanning = null;
   const clients = new Set();
   const broadcast = (event, data) => {
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -107,6 +110,29 @@ export function createApp(hub, { token = null } = {}) {
       if (m === 'DELETE' && id) { await hub.deleteScene(id); return json(res, 200, { ok: true }); }
     }
 
+    // Gerätesuche im Heimnetz: POST /api/discover { subnet?: "192.168.1.0/24" }
+    if (m === 'POST' && res0 === 'discover') {
+      const { subnet } = await readBody(req);
+      // Laufende Suche wiederverwenden, statt das Netz doppelt abzuklappern
+      scanning ??= scanNetwork({ ...scanOptions, subnets: subnet ? [subnet] : scanOptions.subnets })
+        .finally(() => { scanning = null; });
+      let result;
+      try {
+        result = await scanning;
+      } catch (err) {
+        throw new HubError(400, err.message);
+      }
+      return json(res, 200, { ...result, results: markConfigured(hub.config, result.results) });
+    }
+
+    // Gefundene Geräte übernehmen
+    if (m === 'POST' && res0 === 'setup') {
+      const body = await readBody(req);
+      if (id === 'devices') return json(res, 201, { added: await setup.addDevices(body.type, body.devices) });
+      if (id === 'hue') { await setup.addHue(body.host); return json(res, 201, { ok: true }); }
+      if (id === 'homeassistant') { await setup.addHomeAssistant(body.url, body.token); return json(res, 201, { ok: true }); }
+    }
+
     if (m === 'GET' && res0 === 'status') return json(res, 200, hub.status());
     if (m === 'POST' && res0 === 'refresh') { await hub.refresh(); return json(res, 200, { ok: true }); }
 
@@ -148,28 +174,37 @@ async function main() {
   if (cmd === 'hue-pair') {
     if (!arg) return console.error('Aufruf: npm run hue-pair -- <bridge-ip>');
     console.log('Bitte jetzt die Link-Taste auf der Hue Bridge drücken …');
-    for (let i = 0; i < 30; i++) {
-      try {
-        const key = await pairHueBridge(arg);
-        console.log(`\nAPI-Key: ${key}\nIn config.json eintragen:\n{ "type": "hue", "bridge": "${arg}", "username": "${key}" }`);
-        return;
-      } catch (err) {
-        if (!/link button/i.test(err.message)) throw err;
-        await new Promise((r) => setTimeout(r, 2000));
-      }
+    const key = await pairHueBridgeWithRetry(arg, { attempts: 30 });
+    console.log(`\nAPI-Key: ${key}\nIn config.json eintragen:\n{ "type": "hue", "bridge": "${arg}", "username": "${key}" }`);
+    return;
+  }
+
+  if (cmd === 'scan') {
+    const { subnets, scanned, results } = await scanNetwork({
+      subnets: arg ? [arg] : undefined,
+      onProgress: (done, total) => process.stdout.write(`\rDurchsuche ${done}/${total} …`),
+    });
+    console.log(`\r${scanned} Adressen in ${subnets.join(', ')} durchsucht – ${results.length} Gerät(e) gefunden:\n`);
+    for (const r of results) {
+      console.log(`  ${r.host.padEnd(16)} ${r.type.padEnd(14)} ${r.name}${r.model ? ` (${r.model})` : ''}`);
+      for (const d of r.devices ?? []) console.log(`  ${''.padEnd(31)}└ ${d.name} [${d.kind}]`);
+      if (r.needsAuth) console.log(`  ${''.padEnd(31)}⚠ passwortgeschützt`);
     }
-    return console.error('Zeitüberschreitung – Link-Taste nicht gedrückt?');
+    console.log('\nÜbernehmen kannst du die Geräte im Dashboard unter ⚙︎ → „Netzwerk durchsuchen“.');
+    return;
   }
 
   const configPath = process.env.CONFIG ?? join(ROOT, 'config.json');
+  const autoDemo = !existsSync(configPath);
   const config = await loadConfig(configPath);
   const hub = new Hub(config, { dataFile: join(ROOT, 'data', 'user.json') });
+  const setup = new Setup(hub, { configPath, autoDemo });
   await hub.start();
 
   const token = process.env.SMARTHOME_TOKEN ?? config.token ?? null;
   const port = Number(process.env.PORT ?? config.port ?? 8080);
   const host = process.env.HOST ?? config.host ?? '0.0.0.0';
-  createApp(hub, { token }).listen(port, host, () => {
+  createApp(hub, { token, setup, scanOptions: { subnets: config.scanSubnets } }).listen(port, host, () => {
     console.log(`Smart Home läuft auf http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     for (const i of hub.status().integrations) {
       console.log(`  • ${i.id} (${i.type}): ${i.ok ? `${i.devices} Geräte` : `FEHLER – ${i.error}`}`);

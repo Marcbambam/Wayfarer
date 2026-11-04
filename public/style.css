@@ -141,3 +141,20 @@ dialog input:not([type="checkbox"]) {
 #toast.bad { background: var(--bad); color: #fff; }
 
 .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+
+.subnet {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 8px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+}
+#scan-results { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.found { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.found-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.found-dev { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px; align-items: center; }
+.found-dev input[type="text"], .found input[type="password"] {
+  font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); min-width: 0; width: 100%;
+}
+.found .ok { color: var(--ok); font-size: 13px; }
+.found .warn { color: var(--bad); font-size: 13px; }
+@media (max-width: 480px) { .found-dev { grid-template-columns: auto 1fr; } .found-dev .room-in { grid-column: 2; } }
+.found > button { align-self: flex-start; }

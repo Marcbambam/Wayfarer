@@ -39,9 +39,18 @@
     <form method="dialog">
       <h2>Integrationen</h2>
       <div id="integrations"></div>
+
+      <h3>Geräte im Netzwerk finden</h3>
+      <p class="muted small">Sucht im Heimnetz nach Home Assistant, Philips Hue, Shelly und Tasmota.</p>
+      <div class="row">
+        <button type="button" id="btn-scan">Netzwerk durchsuchen</button>
+        <input id="scan-subnet" class="subnet" placeholder="Subnetz (optional), z. B. 192.168.1.0/24" aria-label="Subnetz">
+      </div>
+      <div id="scan-results" aria-live="polite"></div>
+
       <h3>Zeitpläne</h3>
       <div id="automations" class="muted"></div>
-      <p class="muted small">Integrationen, Räume, Szenen und Zeitpläne werden in <code>config.json</code> eingerichtet.</p>
+      <p class="muted small">Räume, Namen, Szenen und Zeitpläne lassen sich zusätzlich in <code>config.json</code> anpassen.</p>
       <div class="row end"><button>Schließen</button></div>
     </form>
   </dialog>
