@@ -198,3 +198,7 @@ dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: 
   .found-dev.two .room-in { grid-column: auto; }
   .manual .row { flex-wrap: wrap; }
 }
+
+#token-status.ok { color: var(--ok); }
+#token-status.warn { color: var(--bad); }
+#token-form[hidden] { display: none; }

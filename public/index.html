@@ -48,7 +48,17 @@
 
   <dialog id="dlg-settings">
     <form method="dialog">
-      <h2>Integrationen</h2>
+      <h2>Einstellungen</h2>
+
+      <h3>Zugangscode</h3>
+      <p id="token-status" class="small"></p>
+      <div id="token-form" class="row">
+        <input id="token-new" class="subnet" type="password" autocomplete="new-password" placeholder="Neuer Zugangscode (mind. 6 Zeichen)" aria-label="Neuer Zugangscode">
+        <button type="button" id="btn-token-save">Speichern</button>
+        <button type="button" id="btn-token-remove" class="ghost" hidden>Entfernen</button>
+      </div>
+
+      <h3>Integrationen</h3>
       <div id="integrations"></div>
 
       <h3>Geräte im Netzwerk finden</h3>

@@ -24,14 +24,32 @@ export class Setup {
     const next = structuredClone(this.config);
     next.integrations ??= [];
     if (this.autoDemo) next.integrations = next.integrations.filter((i) => i.type !== 'demo');
+    delete next.autoDemo;
     mutate(next);
     await this.hub.reloadIntegrations(next); // wirft bei ungültiger Konfiguration, bevor gespeichert wird
-    if (this.configPath) {
-      const tmp = `${this.configPath}.tmp`;
-      await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`);
-      await rename(tmp, this.configPath);
-    }
+    await this.write(next);
     this.autoDemo = false;
+  }
+
+  async write(cfg) {
+    if (!this.configPath) return;
+    const tmp = `${this.configPath}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(cfg, null, 2)}\n`);
+    await rename(tmp, this.configPath);
+  }
+
+  // Zugangscode fürs Dashboard setzen ("" = entfernen). Ändert keine Geräte.
+  async setToken(token) {
+    if (token !== '' && (typeof token !== 'string' || token.length < 6 || token.length > 100 || /\s/.test(token))) {
+      throw new HubError(400, 'Zugangscode: 6–100 Zeichen, ohne Leerzeichen');
+    }
+    const next = structuredClone(this.config);
+    if (token) next.token = token;
+    else delete next.token;
+    // Solange nur die Beispielgeräte laufen, sollen sie beim ersten echten Gerät weiterhin verschwinden
+    if (this.autoDemo) next.autoDemo = true;
+    await this.write(next);
+    this.hub.config = next;
   }
 
   // Beispielgeräte ein- oder ausschalten

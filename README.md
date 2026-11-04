@@ -10,6 +10,12 @@ Eine selbst gehostete Smart-Home-Zentrale mit Web-Dashboard. Alle Geräte ersche
 
 ## Schnellstart
 
+**Windows:** Node.js (LTS) von https://nodejs.org installieren, dann im Wayfarer-Ordner doppelt auf **`start.cmd`** klicken. Das Dashboard öffnet sich im Browser.
+
+**Aktualisieren (Windows):** doppelt auf **`update.cmd`** klicken. Lädt die neueste Version von GitHub, behält `config.json` und `data` (zusätzlich gesichert im Ordner `sicherung`) und startet die Zentrale neu.
+
+**Mac/Linux:**
+
 ```bash
 node server.js          # startet im Demo-Modus mit simulierten Geräten
 # → http://localhost:8080
@@ -163,7 +169,7 @@ Szenen werden entweder in `config.json` definiert oder direkt im Dashboard angel
 
 ## Zugriffsschutz
 
-Setze `"token"` in `config.json` oder die Umgebungsvariable `SMARTHOME_TOKEN`. Das Dashboard fragt dann einmal nach dem Code und merkt ihn sich. **Gib den Server nicht ungeschützt ins Internet frei.** Für Zugriff von unterwegs eignen sich ein VPN (WireGuard, Tailscale) oder ein Reverse-Proxy mit HTTPS.
+Im Dashboard unter **⚙︎ → Zugangscode** festlegen. Alternativ `"token"` in `config.json` oder die Umgebungsvariable `SMARTHOME_TOKEN` setzen. Das Dashboard fragt dann einmal nach dem Code und merkt ihn sich. **Gib den Server nicht ungeschützt ins Internet frei.** Für Zugriff von unterwegs eignen sich ein VPN (WireGuard, Tailscale) oder ein Reverse-Proxy mit HTTPS.
 
 ## REST-API
 

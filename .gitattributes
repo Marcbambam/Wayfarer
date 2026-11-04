@@ -1,0 +1,3 @@
+# Windows-Skripte mit CRLF ausliefern
+*.cmd -text
+*.ps1 -text

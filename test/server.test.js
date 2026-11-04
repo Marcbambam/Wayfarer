@@ -78,3 +78,47 @@ test('Live-Updates per Server-Sent Events', async () => {
     await app.close();
   }
 });
+
+test('Zugangscode im Dashboard setzen und entfernen', async () => {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { Setup } = await import('../src/setup.js');
+  const dir = await mkdtemp(join(tmpdir(), 'tok-'));
+  const configPath = join(dir, 'config.json');
+  const hub = new Hub({ integrations: [{ type: 'demo' }] }, { log: { warn() {}, info() {} } });
+  await hub.refresh();
+  const setup = new Setup(hub, { configPath, autoDemo: true });
+  const srv = createApp(hub, { setup });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const call = (path, { method = 'GET', body, token } = {}) => fetch(base + path, {
+    method,
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  try {
+    assert.deepEqual(await (await call('/api/settings')).json(), { tokenSet: false, tokenFromEnv: false });
+    assert.equal((await call('/api/settings/token', { method: 'POST', body: { token: 'kurz' } })).status, 400);
+    assert.equal((await call('/api/settings/token', { method: 'POST', body: { token: 'mein-geheimer-code' } })).status, 200);
+    assert.equal((await call('/api/devices')).status, 401, 'ab sofort geschützt');
+    assert.equal((await call('/api/devices', { token: 'mein-geheimer-code' })).status, 200);
+    const saved = JSON.parse(await readFile(configPath, 'utf8'));
+    assert.equal(saved.token, 'mein-geheimer-code');
+    assert.equal(saved.autoDemo, true, 'Beispielgeräte verschwinden weiterhin beim ersten echten Gerät');
+    assert.ok(hub.listDevices().length > 5, 'Geräte bleiben unverändert');
+
+    // Erstes echtes Gerät: Demo weg, Code bleibt
+    await setup.setDemo(false);
+    const after = JSON.parse(await readFile(configPath, 'utf8'));
+    assert.equal(after.token, 'mein-geheimer-code');
+    assert.equal(after.autoDemo, undefined);
+
+    assert.equal((await call('/api/settings/token', { method: 'POST', body: { token: '' }, token: 'mein-geheimer-code' })).status, 200);
+    assert.equal((await call('/api/devices')).status, 200);
+  } finally {
+    srv.closeAllConnections();
+    await new Promise((r) => srv.close(r));
+    await rm(dir, { recursive: true });
+  }
+});

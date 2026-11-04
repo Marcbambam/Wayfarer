@@ -44,8 +44,10 @@ async function command(id, action, value) {
   }
 }
 
+let es = null;
 function connect() {
-  const es = new EventSource(`/api/events${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+  es?.close();
+  es = new EventSource(`/api/events${token ? `?token=${encodeURIComponent(token)}` : ''}`);
   es.addEventListener('init', (e) => {
     const d = JSON.parse(e.data);
     state.devices = new Map(d.devices.map((x) => [x.id, x]));
@@ -371,6 +373,7 @@ function openSettings() {
     auto.append(el('div', { class: 'small' }, `${a.at} · ${a.days ? a.days.map((x) => days[x]).join(', ') : 'täglich'} · ${a.name ?? a.scene ?? ''}${a.enabled === false ? ' (aus)' : ''}`));
   }
   renderHidden();
+  renderTokenStatus();
   if (!$('#dlg-settings').open) $('#dlg-settings').showModal();
 }
 
@@ -603,6 +606,7 @@ $('#dlg-settings').addEventListener('keydown', (e) => {
   e.preventDefault();
   if (e.target.id === 'scan-subnet') runScan();
   if (e.target.id === 'manual-ip') $('#btn-manual').click();
+  if (e.target.id === 'token-new') $('#btn-token-save').click();
 });
 
 
@@ -678,3 +682,42 @@ $('#btn-manual').onclick = () => {
   $('#scan-results').prepend(card);
   card.querySelector('input')?.focus();
 };
+
+// ---- Zugangscode --------------------------------------------------------
+
+async function renderTokenStatus() {
+  const st = $('#token-status');
+  try {
+    const r = await api('/settings');
+    st.textContent = r.tokenSet
+      ? '🔒 Geschützt – das Dashboard fragt auf jedem neuen Gerät einmal nach dem Code.'
+      : '⚠️ Nicht geschützt – jeder in deinem WLAN kann alles steuern, auch Alarmanlage und Türschloss.';
+    st.className = `small ${r.tokenSet ? 'ok' : 'warn'}`;
+    $('#btn-token-remove').hidden = !r.tokenSet;
+    $('#token-form').hidden = r.tokenFromEnv;
+    if (r.tokenFromEnv) st.textContent += ' (Festgelegt über SMARTHOME_TOKEN.)';
+  } catch { /* egal */ }
+}
+
+async function saveToken(value) {
+  try {
+    await api('/settings/token', { method: 'POST', body: { token: value } });
+    token = value || null;
+    if (value) safeSet('smarthome-token', value); else safeRemove('smarthome-token');
+    $('#token-new').value = '';
+    connect();
+    renderTokenStatus();
+    toast(value ? 'Zugangscode gespeichert – merk ihn dir gut' : 'Zugangscode entfernt');
+  } catch (err) { toast(err.message, true); }
+}
+
+$('#btn-token-save').onclick = () => {
+  const v = $('#token-new').value;
+  if (v.length < 6) return toast('Mindestens 6 Zeichen', true);
+  saveToken(v);
+};
+$('#btn-token-remove').onclick = () => {
+  if (confirm('Zugangscode wirklich entfernen? Dann kann jeder im WLAN alles steuern.')) saveToken('');
+};
+
+function safeRemove(k) { try { localStorage.removeItem(k); } catch { /* egal */ } }

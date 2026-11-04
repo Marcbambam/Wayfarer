@@ -30,7 +30,8 @@ export async function loadConfig(path) {
   return JSON.parse(await readFile(path, 'utf8'));
 }
 
-export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanOptions = {} } = {}) {
+export function createApp(hub, { token = null, tokenFromEnv = false, setup = new Setup(hub, {}), scanOptions = {} } = {}) {
+  const auth = { token };
   let scanning = null;
   const clients = new Set();
   const broadcast = (event, data) => {
@@ -42,6 +43,7 @@ export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanO
   hub.on('status', () => broadcast('status', { ...hub.status(), scenes: hub.listScenes() }));
 
   const authorized = (req, url) => {
+    const { token } = auth;
     if (!token) return true;
     const given = (req.headers.authorization ?? '').replace(/^Bearer /, '') || url.searchParams.get('token') || '';
     const a = Buffer.from(given);
@@ -138,6 +140,18 @@ export function createApp(hub, { token = null, setup = new Setup(hub, {}), scanO
       if (id === 'homeassistant') { await setup.addHomeAssistant(body.url, body.token); return json(res, 201, { ok: true }); }
     }
 
+    // Zugangscode: GET /api/settings, POST /api/settings/token { token }
+    if (res0 === 'settings') {
+      if (m === 'GET' && !id) return json(res, 200, { tokenSet: Boolean(auth.token), tokenFromEnv });
+      if (m === 'POST' && id === 'token') {
+        if (tokenFromEnv) throw new HubError(409, 'Der Zugangscode ist über die Umgebungsvariable SMARTHOME_TOKEN festgelegt');
+        const { token: next = '' } = await readBody(req);
+        await setup.setToken(next);
+        auth.token = next || null;
+        return json(res, 200, { tokenSet: Boolean(auth.token) });
+      }
+    }
+
     if (m === 'GET' && res0 === 'status') return json(res, 200, hub.status());
     if (m === 'POST' && res0 === 'refresh') { await hub.refresh(); return json(res, 200, { ok: true }); }
 
@@ -200,8 +214,8 @@ async function main() {
   }
 
   const configPath = process.env.CONFIG ?? join(ROOT, 'config.json');
-  const autoDemo = !existsSync(configPath);
   const config = await loadConfig(configPath);
+  const autoDemo = !existsSync(configPath) || config.autoDemo === true;
   const hub = new Hub(config, { dataFile: join(ROOT, 'data', 'user.json') });
   const setup = new Setup(hub, { configPath, autoDemo });
   await hub.start();
@@ -209,12 +223,22 @@ async function main() {
   const token = process.env.SMARTHOME_TOKEN ?? config.token ?? null;
   const port = Number(process.env.PORT ?? config.port ?? 8080);
   const host = process.env.HOST ?? config.host ?? '0.0.0.0';
-  createApp(hub, { token, setup, scanOptions: { subnets: config.scanSubnets } }).listen(port, host, () => {
+  const app = createApp(hub, { token, tokenFromEnv: Boolean(process.env.SMARTHOME_TOKEN), setup, scanOptions: { subnets: config.scanSubnets } }).listen(port, host, () => {
     console.log(`Smart Home läuft auf http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
     for (const i of hub.status().integrations) {
       console.log(`  • ${i.id} (${i.type}): ${i.ok ? `${i.devices} Geräte` : `FEHLER – ${i.error}`}`);
     }
-    if (!token) console.log('  Hinweis: Kein Zugriffsschutz gesetzt (SMARTHOME_TOKEN oder "token" in config.json).');
+    if (!token) console.log('  Hinweis: Kein Zugangscode gesetzt – im Dashboard unter ⚙︎ → „Zugangscode“ festlegen.');
+  });
+
+  app.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\nPort ${port} ist schon belegt – läuft die Zentrale bereits in einem anderen Fenster?`);
+      console.error('Dann dieses Fenster schließen und das andere benutzen (http://localhost:' + port + ').');
+    } else {
+      console.error(err.message);
+    }
+    process.exit(1);
   });
 
   const shutdown = async () => { await hub.stop(); process.exit(0); };
