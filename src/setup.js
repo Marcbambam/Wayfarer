@@ -3,6 +3,7 @@ import { HubError } from './device.js';
 import { pairHueBridgeWithRetry } from './adapters/hue.js';
 import { pairLgTv } from './adapters/lgtv.js';
 import { testLupus } from './adapters/lupus.js';
+import { pairHomematicIp, HomematicIpAdapter, LOOKUP_URL } from './adapters/homematicip.js';
 
 const HOST_RE = /^[\w.-]+(:\d+)?$/;
 const text = (v, max = 60) => (typeof v === 'string' && v.trim() && v.length <= max ? v.trim() : undefined);
@@ -155,6 +156,28 @@ export class Setup {
       else cfg.integrations.push({ ...entry, id: uniqueId('lupus', cfg.integrations.map((i) => i.id ?? i.type)) });
     });
     return info;
+  }
+
+  // Homematic IP: Access-Point-ID vom Aufkleber, dann blaue Taste drücken (wartet bis zu 2 Minuten).
+  async addHomematicIp({ accessPoint, pin, lockPin } = {}, { lookupUrl = LOOKUP_URL, waitMs, intervalMs } = {}) {
+    if (lockPin !== undefined && lockPin !== '' && !/^\d{1,12}$/.test(String(lockPin))) {
+      throw new HubError(400, 'Berechtigungs-PIN: nur Ziffern');
+    }
+    const paired = await pairHomematicIp(accessPoint, { pin: pin || undefined, lookupUrl, waitMs, intervalMs });
+    const entry = { type: 'homematicip', accessPoint: paired.accessPoint, authToken: paired.authToken };
+    if (lockPin) entry.lockPin = String(lockPin);
+    if (lookupUrl !== LOOKUP_URL) entry.lookupUrl = lookupUrl;
+    const test = new HomematicIpAdapter('test', entry);
+    const devices = await test.discover();
+    await this.commit((cfg) => {
+      const existing = cfg.integrations.find((i) => i.type === 'homematicip' && i.accessPoint === paired.accessPoint);
+      if (existing) Object.assign(existing, entry);
+      else cfg.integrations.push({ ...entry, id: uniqueId('hmip', cfg.integrations.map((i) => i.id ?? i.type)) });
+    });
+    return {
+      heating: devices.filter((d) => d.type === 'thermostat').length,
+      locks: devices.filter((d) => d.type === 'lock').length,
+    };
   }
 
   async addHomeAssistant(url, token) {

@@ -2,7 +2,7 @@
 
 Diese Anleitung bindet **Homematic-IP-Heizung und -Türschlossantrieb sowie den Dreame-Saugroboter** an. Home Assistant spricht mit den Geräten, und das Wayfarer-Dashboard zeigt sie alle an einem Ort an.
 
-> **LG-Fernseher und LUPUS-Alarmanlage brauchen kein Home Assistant.** Die bindet das Dashboard direkt ein: **⚙︎ → „Netzwerk durchsuchen“** (siehe README). Die Abschnitte dazu weiter unten sind nur für den Fall gedacht, dass du sie trotzdem lieber über Home Assistant laufen lässt.
+> **LG-Fernseher, LUPUS-Alarmanlage und Homematic IP brauchen kein Home Assistant mehr.** Die bindet das Dashboard direkt ein: **⚙︎ → „Netzwerk durchsuchen“** (siehe README). Die Abschnitte dazu weiter unten sind nur für den Fall gedacht, dass du sie trotzdem lieber über Home Assistant laufen lässt.
 
 ```
 Geräte  ──►  Home Assistant  ──►  Wayfarer-Dashboard (Handy, PC, Tablet)
@@ -44,7 +44,7 @@ Alle Integrationen fügst du so hinzu: **Einstellungen → Geräte & Dienste →
 
 Ausschalten, Lautstärke und Pause funktionieren auch ohne diesen Schritt.
 
-### Homematic IP: Heizung und Türschlossantrieb
+### Homematic IP: Heizung und Türschlossantrieb (optional, geht auch direkt)
 
 1. Integration **„HomematicIP Cloud“** hinzufügen.
 2. **Access-Point-ID** (SGTIN) eintragen. Sie steht auf dem Aufkleber auf der Rückseite des Access Points, z. B. `3014-F711-A000-0000-0000-0000`. Die PIN brauchst du nur, wenn du in der App eine vergeben hast.

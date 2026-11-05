@@ -194,7 +194,9 @@ function describe(d) {
   if (!d.online) return 'Nicht erreichbar';
   switch (d.type) {
     case 'light': return s.on ? (s.brightness != null ? `An · ${s.brightness} %` : 'An') : 'Aus';
-    case 'thermostat': return s.on ? `Heizt auf ${fmt(s.target)} °C` : 'Aus';
+    case 'thermostat':
+      if (s.on === false) return 'Aus';
+      return `${s.on ? 'Heizt auf' : 'Ziel'} ${fmt(s.target)} °C${s.window ? ` · Fenster ${s.window}` : ''}`;
     case 'cover': return s.position === 0 ? 'Geschlossen' : s.position === 100 ? 'Offen' : `${s.position} % offen`;
     case 'lock':
       if (s.lockState === 'jammed') return 'Blockiert!';
@@ -248,12 +250,15 @@ function deviceCard(d) {
     const plus = el('button', { class: 'ghost', 'aria-label': 'Wärmer' }, '+');
     minus.onclick = () => step(-0.5);
     plus.onclick = () => step(0.5);
-    const sw = el('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s.on), 'aria-label': 'Heizung an/aus' });
-    sw.onclick = () => command(d.id, s.on ? 'turn_off' : 'turn_on');
     card.append(el('div', { class: 'temp' },
-      el('div', {}, el('div', { class: 'big' }, `${fmt(s.temperature)}°`), el('div', { class: 'muted small' }, 'Raumtemperatur')),
+      el('div', {}, el('div', { class: 'big' }, `${fmt(s.temperature)}°`),
+        el('div', { class: 'muted small' }, `Raumtemperatur${typeof s.humidity === 'number' ? ` · ${s.humidity} % Feuchte` : ''}`)),
       el('div', { class: 'stepper' }, minus, el('strong', {}, `${fmt(s.target)}°`), plus)));
-    card.append(el('div', { class: 'ctl' }, el('label', {}, 'Heizung'), sw));
+    if (caps.has('onoff')) {
+      const sw = el('button', { class: 'switch', role: 'switch', 'aria-checked': String(!!s.on), 'aria-label': 'Heizung an/aus' });
+      sw.onclick = () => command(d.id, s.on ? 'turn_off' : 'turn_on');
+      card.append(el('div', { class: 'ctl' }, el('label', {}, 'Heizung'), sw));
+    }
   }
   if (caps.has('position')) {
     card.append(slider('Position', s.position ?? 0, '%', (v) => command(d.id, 'set_position', v)));
@@ -381,7 +386,7 @@ function openSettings() {
 
 const TYPE_LABEL = {
   homeassistant: 'Home Assistant', hue: 'Philips Hue', shelly: 'Shelly', tasmota: 'Tasmota',
-  lgtv: 'LG-Fernseher', lupus: 'LUPUS-Alarmanlage',
+  lgtv: 'LG-Fernseher', lupus: 'LUPUS-Alarmanlage', homematicip: 'Homematic IP',
 };
 
 $('#btn-scan').onclick = () => runScan();
@@ -459,6 +464,29 @@ function foundCard(f) {
     };
     card.append(b);
     ensureRoomList();
+    return card;
+  }
+
+  if (f.type === 'homematicip') {
+    card.append(el('p', { class: 'small' }, 'Die Access-Point-ID (SGTIN) steht auf dem Aufkleber auf der Rückseite des Access Points, z. B. 3014-F711-A000-0000-0000-0000.'));
+    const ap = el('input', { type: 'text', placeholder: 'Access-Point-ID', autocomplete: 'off', 'aria-label': 'Access-Point-ID' });
+    const pin = el('input', { type: 'password', inputmode: 'numeric', placeholder: 'PIN Access Point (falls vergeben)', autocomplete: 'off', 'aria-label': 'PIN des Access Points' });
+    const lockPin = el('input', { type: 'password', inputmode: 'numeric', placeholder: 'PIN Türschloss (falls vergeben)', autocomplete: 'off', 'aria-label': 'Berechtigungs-PIN Türschloss' });
+    card.append(ap, el('div', { class: 'found-dev two' }, pin, lockPin));
+    const hint = el('p', { class: 'small' }, 'Nach dem Klick auf „Verbinden“ die blaue Taste am Access Point drücken (du hast 2 Minuten).');
+    card.append(hint);
+    const b = el('button', { type: 'button' }, 'Verbinden');
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = 'Jetzt die blaue Taste am Access Point drücken …';
+      hint.className = 'small warn';
+      try {
+        const r = await api('/setup/homematicip', { method: 'POST', body: { accessPoint: ap.value.trim(), pin: pin.value.trim() || undefined, lockPin: lockPin.value.trim() || undefined } });
+        done(`✓ Verbunden – ${r.heating} Heizung${r.heating === 1 ? '' : 'en'}${r.locks ? ` und ${r.locks} Türschloss` : ''} erscheinen gleich im Dashboard`);
+      } catch (err) {
+        toast(err.message, true); b.disabled = false; b.textContent = 'Verbinden'; hint.className = 'small';
+      }
+    };
+    card.append(b);
     return card;
   }
 
@@ -673,9 +701,21 @@ function askCode(title) {
 
 // ---- Gerät per IP-Adresse hinzufügen -----------------------------------
 
+$('#manual-type').onchange = () => {
+  const cloud = $('#manual-type').value === 'homematicip';
+  $('#manual-ip').hidden = cloud;
+  $('#manual-ip-hint').hidden = cloud;
+};
+
 $('#btn-manual').onclick = () => {
   const ip = $('#manual-ip').value.trim();
   const type = $('#manual-type').value;
+  if (type === 'homematicip') {
+    const card = foundCard({ type, host: 'Cloud', name: 'Homematic IP Access Point' });
+    $('#scan-results').prepend(card);
+    card.querySelector('input')?.focus();
+    return;
+  }
   if (!/^[\w.-]+(:\d+)?$/.test(ip)) return toast('Bitte eine IP-Adresse eingeben, z. B. 192.168.178.40', true);
   const names = { lgtv: 'LG-Fernseher', lupus: 'LUPUS-Alarmanlage' };
   const card = foundCard({ type, host: ip, name: names[type] });

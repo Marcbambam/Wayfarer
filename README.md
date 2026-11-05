@@ -69,6 +69,7 @@ npm start
 | `tasmota` | Geräte mit Tasmota-Firmware (Steckdosen, LED-Strips, Lampen) | IP-Adresse je Gerät |
 | `webhook` | Alles mit HTTP-Schnittstelle: ESPHome, Node-RED, IFTTT, Eigenbau | URL pro Aktion |
 | `lgtv` | LG-Fernseher mit webOS: An/Aus (Einschalten per Wake-on-LAN), Lautstärke, Play/Pause, aktuelle App | IP-Adresse; Kopplung per Abfrage am Fernseher |
+| `homematicip` | Homematic IP mit Access Point (über die Cloud): Heizung je Raum, Türschlossantrieb | Access-Point-ID + blaue Taste |
 | `lupus` | LUPUSEC XT2 Plus/XT3/XT4: Scharf (abwesend/zuhause), Unscharf, Tür-/Fensterkontakte | IP-Adresse, Benutzer, Passwort |
 | `demo` | Simulierte Geräte zum Ausprobieren | – |
 
@@ -109,6 +110,19 @@ Am einfachsten über die Gerätesuche. Manuell in `config.json` (den `key` bekom
 ```
 
 **Einschalten aus dem Standby:** Ein ausgeschalteter LG-Fernseher reagiert nur auf ein Wake-on-LAN-Signal. Dafür am Fernseher **„Über WLAN einschalten“** bzw. **„Mit Mobilgerät einschalten“** aktivieren (*Einstellungen → Allgemein → Geräte → TV-Verwaltung*, je nach Modell auch unter *Netzwerk*). Die MAC-Adresse liest die Zentrale beim Koppeln selbst aus.
+
+### Homematic IP (Access Point)
+
+Der Access Point wird nur über die Homematic-IP-Cloud gesteuert, deshalb findet ihn die Netzwerksuche nicht. Einrichtung im Dashboard: **⚙︎ → „Hier von Hand hinzufügen“ → Homematic IP**
+1. Access-Point-ID (SGTIN) vom Aufkleber eintragen, z. B. `3014-F711-A000-0000-0000-0000`.
+2. Nur falls in der App vergeben: PIN des Access Points und Berechtigungs-PIN fürs Türschloss eintragen.
+3. „Verbinden“ klicken und innerhalb von 2 Minuten die **blaue Taste** am Access Point drücken.
+
+Danach erscheinen die **Heizungen je Raum** (Ist-/Solltemperatur, Luftfeuchte, Fenster offen) und der **Türschlossantrieb** (Verriegeln, Entriegeln, Tür öffnen). Räume werden aus der App übernommen.
+
+- **Inoffizielle Schnittstelle:** dieselbe, die Home Assistant nutzt. eQ-3 kann sie ändern, dann muss die Anbindung angepasst werden.
+- Funktioniert nur mit Internetverbindung. Die Zentrale fragt die Cloud höchstens alle 30 Sekunden ab (`"pollSeconds"`), nach einem Befehl kurz öfter.
+- **Türschloss:** Kommt beim Schalten eine Meldung zur Berechtigung, muss der neue Zugang „Wayfarer Smart Home“ in der Homematic-IP-App beim Türschlossantrieb unter den Zutrittsberechtigungen freigegeben werden.
 
 ### LUPUS-Alarmanlage (XT2 Plus, XT3, XT4)
 

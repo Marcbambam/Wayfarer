@@ -202,3 +202,7 @@ dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: 
 #token-status.ok { color: var(--ok); }
 #token-status.warn { color: var(--bad); }
 #token-form[hidden] { display: none; }
+.subnet[hidden] { display: none; }
+.found > input[type="text"] { width: 100%; font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+p.warn { color: var(--bad); }
+#manual-ip-hint[hidden] { display: none; }

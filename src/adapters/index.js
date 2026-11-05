@@ -6,6 +6,7 @@ import { TasmotaAdapter } from './tasmota.js';
 import { WebhookAdapter } from './webhook.js';
 import { LgTvAdapter } from './lgtv.js';
 import { LupusAdapter } from './lupus.js';
+import { HomematicIpAdapter } from './homematicip.js';
 
 export const ADAPTERS = {
   demo: DemoAdapter,
@@ -16,6 +17,7 @@ export const ADAPTERS = {
   webhook: WebhookAdapter,
   lgtv: LgTvAdapter,
   lupus: LupusAdapter,
+  homematicip: HomematicIpAdapter,
 };
 
 export function createAdapter({ type, id, ...config }) {

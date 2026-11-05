@@ -62,22 +62,23 @@
       <div id="integrations"></div>
 
       <h3>Geräte im Netzwerk finden</h3>
-      <p class="muted small">Sucht im Heimnetz nach LG-Fernsehern, LUPUS-Alarmanlagen, Shelly, Tasmota, Philips Hue und Home Assistant.</p>
+      <p class="muted small">Sucht im Heimnetz nach LG-Fernsehern, LUPUS-Alarmanlagen, Shelly, Tasmota, Philips Hue und Home Assistant. Homematic IP läuft über die Cloud und wird unten von Hand verbunden.</p>
       <div class="row">
         <button type="button" id="btn-scan">Netzwerk durchsuchen</button>
         <input id="scan-subnet" class="subnet" placeholder="Subnetz (optional), z. B. 192.168.1.0/24" aria-label="Subnetz">
       </div>
       <details class="manual">
-        <summary class="small">Gerät wird nicht gefunden? Per IP-Adresse hinzufügen</summary>
+        <summary class="small">Gerät wird nicht gefunden? Hier von Hand hinzufügen (z. B. Homematic IP)</summary>
         <div class="row">
           <select id="manual-type" aria-label="Gerätetyp">
+            <option value="homematicip">Homematic IP (Access Point)</option>
             <option value="lgtv">LG-Fernseher</option>
             <option value="lupus">LUPUS-Alarmanlage</option>
           </select>
-          <input id="manual-ip" class="subnet" placeholder="IP-Adresse, z. B. 192.168.178.40" aria-label="IP-Adresse">
+          <input id="manual-ip" class="subnet" placeholder="IP-Adresse, z. B. 192.168.178.40" aria-label="IP-Adresse" hidden>
           <button type="button" id="btn-manual" class="ghost">Weiter</button>
         </div>
-        <p class="muted small">Die IP-Adresse findest du in deinem Router (z. B. Fritz!Box: Heimnetz → Netzwerk) oder in den Netzwerkeinstellungen des Geräts.</p>
+        <p id="manual-ip-hint" class="muted small" hidden>Die IP-Adresse findest du in deinem Router (z. B. Fritz!Box: Heimnetz → Netzwerk) oder in den Netzwerkeinstellungen des Geräts.</p>
       </details>
       <div id="scan-results" aria-live="polite"></div>
 
